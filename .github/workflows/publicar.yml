@@ -1,0 +1,58 @@
+# Compila el instalador de Windows, crea el release (de donde se actualizan solas las PC)
+# y publica la versión web en GitHub Pages. Se ejecuta a mano (Actions → Run workflow)
+# o al pushear un tag vX.Y.Z.
+name: Publicar instalador
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+env:
+  VITE_SUPABASE_URL: https://wzpgnrntflgqhryntfly.supabase.co
+  VITE_SUPABASE_ANON_KEY: sb_publishable_3trTzIjHIe9zSOIicTuwrA_lJ0jZ_Xw
+  VITE_WEB_URL: https://estebanbullano.github.io/mantenimiento-rossi
+
+jobs:
+  instalador:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compilar y publicar el release
+        run: npm run publicar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  web:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compilar versión web (celulares)
+        run: npm run build:web
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-web
+      - id: deploy
+        uses: actions/deploy-pages@v4
