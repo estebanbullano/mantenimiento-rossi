@@ -1,0 +1,28 @@
+# Carga inicial del código: al subir codigo.zip por la web de GitHub, este workflow
+# lo descomprime en el repositorio y borra el zip. Después de eso no hace falta más.
+name: Desempaquetar codigo.zip
+
+on:
+  workflow_dispatch:
+  push:
+    paths: ['codigo.zip']
+
+jobs:
+  desempaquetar:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Descomprimir
+        run: |
+          test -f codigo.zip
+          unzip -o codigo.zip -d .
+          rm codigo.zip
+      - name: Guardar en el repositorio
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Código inicial de Mantenimiento Rossi"
+          git push
