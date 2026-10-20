@@ -1,6 +1,6 @@
 # Compila el instalador de Windows, crea el release (de donde se actualizan solas las PC)
 # y publica la versión web en GitHub Pages. Se ejecuta a mano (Actions → Run workflow)
-# o al pushear un tag vX.Y.Z.
+# o al pushear un tag vX.Y.Z. La versión sale de package.json.
 name: Publicar instalador
 
 on:
@@ -25,6 +25,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Crear el tag de la versión si no existe
+        shell: bash
+        run: |
+          V=$(node -p "require('./package.json').version")
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          if git ls-remote --tags origin "refs/tags/v$V" | grep -q .; then
+            echo "El tag v$V ya existe"
+          else
+            git tag "v$V" && git push origin "v$V"
+          fi
       - name: Compilar y publicar el release
         run: npm run publicar
         env:
@@ -49,8 +60,6 @@ jobs:
       - name: Compilar versión web (celulares)
         run: npm run build:web
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist-web
