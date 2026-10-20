@@ -1,0 +1,30 @@
+# Instalador para Windows con actualización automática desde GitHub Releases,
+# igual que Compras Rossi.
+appId: com.famigliarossi.mantenimiento
+productName: Mantenimiento Rossi
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+asarUnpack: []
+protocols:
+  - name: Mantenimiento Rossi
+    schemes: [mantenimientorossi]
+win:
+  target: nsis
+  icon: build/icon.png
+  artifactName: Mantenimiento-Rossi-Instalador-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  shortcutName: Mantenimiento Rossi
+# Releases en el repositorio propio del sistema (GitHub Releases).
+publish:
+  provider: github
+  owner: estebanbullano
+  repo: mantenimiento-rossi
+  releaseType: release

@@ -1,0 +1,44 @@
+{
+  "name": "mantenimiento-rossi",
+  "productName": "Mantenimiento Rossi",
+  "version": "1.0.0",
+  "description": "Plataforma integrada de mantenimiento - Agrícola Magdalena S.R.L.",
+  "author": "Agrícola Magdalena S.R.L.",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:web": "vite --config vite.web.config.ts",
+    "build": "electron-vite build",
+    "build:web": "vite build --config vite.web.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "instalador": "electron-vite build && electron-builder --win --publish never",
+    "publicar": "electron-vite build && electron-builder --win --publish always",
+    "version:tag": "node scripts/tag.mjs",
+    "probar-sql": "node supabase/tests/probar-esquema.mjs supabase/migrations/0001_mantenimiento.sql"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.10",
+    "@fontsource/nunito": "^5.3.0",
+    "@supabase/supabase-js": "^2.118.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.9.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.4",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

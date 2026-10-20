@@ -1,0 +1,197 @@
+export type Rol = 'solicitante' | 'operario' | 'referente' | 'supervisor' | 'panolero' | 'compras' | 'director' | 'admin'
+
+export const ROLES: Record<Rol, string> = {
+  solicitante: 'Área solicitante',
+  operario: 'Operario',
+  referente: 'Referente de mantenimiento',
+  supervisor: 'Supervisor de mantenimiento',
+  panolero: 'Pañolero',
+  compras: 'Compras',
+  director: 'Director',
+  admin: 'Administrador'
+}
+
+export interface Usuario {
+  id: string
+  email: string | null
+  nombre: string
+  rol: Rol
+  area: string | null
+  turno: string | null
+  limite_aprobacion_usd: number
+  activo: boolean
+}
+
+export interface Planta { id: string; codigo: string; nombre: string; activo: boolean }
+export interface Sector { id: string; planta_id: string; codigo: string; nombre: string; activo: boolean }
+
+export type Clasificacion = 'NC' | 'MC' | 'C'
+
+export interface Equipo {
+  id: string
+  codigo: string
+  nombre: string
+  planta_id: string
+  sector_id: string | null
+  descripcion: string | null
+  marca: string | null
+  modelo: string | null
+  nro_serie: string | null
+  diseno_propio: boolean
+  tiene_reemplazo: boolean
+  io: number
+  fo: number
+  cm_manual: number | null
+  costo_falla_usd: number | null
+  isa: number
+  frecuencia_fallas: number | null
+  clasificacion_manual: Clasificacion | null
+  notas: string | null
+  activo: boolean
+  // de la vista
+  clasificacion_calculada?: Clasificacion
+  planta_codigo?: string
+  planta_nombre?: string
+  sector_codigo?: string | null
+  sector_nombre?: string | null
+  cm?: number
+  criticidad?: number
+  clasificacion?: Clasificacion
+}
+
+export type Unidad = 'dias' | 'semanas' | 'meses' | 'horas'
+export const UNIDADES: Record<Unidad, string> = { dias: 'días', semanas: 'semanas', meses: 'meses', horas: 'horas' }
+
+export interface Tarea {
+  id: string
+  equipo_id: string | null
+  unidad: string | null
+  descripcion: string
+  origen: string | null
+  frecuencia_valor: number
+  frecuencia_unidad: Unidad
+  duracion_estimada_horas: number | null
+  responsable_id: string | null
+  turno: string | null
+  requiere_parada: boolean
+  ultima_ejecucion: string | null
+  proxima_fecha: string
+  activa: boolean
+  notas: string | null
+}
+
+export type Prioridad = 'baja' | 'media' | 'alta' | 'urgente'
+export const PRIORIDADES: Prioridad[] = ['urgente', 'alta', 'media', 'baja']
+
+export type EstadoPedido = 'nuevo' | 'aprobado' | 'rechazado' | 'en_ot' | 'cerrado'
+
+export interface Pedido {
+  id: string
+  numero: number
+  equipo_id: string | null
+  ubicacion: string | null
+  area: string | null
+  descripcion: string
+  equipo_detenido: boolean
+  solicitante_id: string
+  estado: EstadoPedido
+  prioridad: Prioridad | null
+  fecha_comprometida: string | null
+  motivo_rechazo: string | null
+  foto_ruta: string | null
+  creado_en: string
+  equipo_codigo?: string | null
+  equipo_nombre?: string | null
+  solicitante_nombre?: string | null
+  orden_id?: string | null
+  orden_estado?: EstadoOT | null
+}
+
+export type EstadoOT = 'pendiente' | 'en_proceso' | 'completada' | 'cancelada'
+
+export interface Orden {
+  id: string
+  numero: number
+  tipo: 'preventiva' | 'correctiva'
+  equipo_id: string | null
+  tarea_id: string | null
+  pedido_id: string | null
+  titulo: string
+  descripcion: string | null
+  prioridad: Prioridad
+  estado: EstadoOT
+  asignado_id: string | null
+  turno: string | null
+  semana: string | null
+  fecha_programada: string | null
+  fecha_comprometida: string | null
+  duracion_estimada_horas: number | null
+  iniciada_en: string | null
+  completada_en: string | null
+  tiempo_real_min: number | null
+  comentario_cierre: string | null
+  creado_en: string
+  equipo_codigo?: string | null
+  equipo_nombre?: string | null
+  planta_id?: string | null
+  tarea_unidad?: string | null
+  asignado_nombre?: string | null
+  pedido_numero?: number | null
+  pedido_area?: string | null
+  vencida?: boolean
+  fotos_cierre?: number
+  items_total?: number
+  items_hechos?: number
+}
+
+export interface TareaItem { id: string; tarea_id: string; orden: number; descripcion: string; horas: number | null; detalle: string | null }
+export interface OtItem { id: string; orden_id: string; orden: number; descripcion: string; detalle: string | null; hecho: boolean; observacion: string | null; hecho_en: string | null }
+export interface Proveedor { id: string; nombre: string; localidad: string | null; contacto: string | null; telefono: string | null; rubro: string | null; activo: boolean }
+
+export interface Articulo {
+  id: string
+  codigo: string
+  descripcion: string
+  familia: string | null
+  unidad: string
+  ubicacion: string | null
+  alias: string[]
+  stock_actual: number
+  stock_minimo: number
+  stock_sugerido: number | null
+  costo_unit_usd: number | null
+  activo: boolean
+  bajo_minimo?: boolean
+  bajo_sugerido?: boolean
+  equipos_que_lo_usan?: number
+}
+
+export type EstadoCompra = 'borrador' | 'pendiente' | 'aprobada' | 'rechazada' | 'comprada' | 'recibida'
+
+export interface Compra {
+  id: string
+  numero: number
+  orden_id: string | null
+  tarea_id: string | null
+  descripcion: string
+  proveedor: string | null
+  moneda: 'ARS' | 'USD'
+  monto: number
+  tipo_cambio: number | null
+  monto_usd: number | null
+  estado: EstadoCompra
+  adjunto_ruta: string | null
+  solicitado_por: string | null
+  decidido_por: string | null
+  decidido_en: string | null
+  comentario: string | null
+  creado_en: string
+}
+
+export interface Config {
+  corte_costo_usd: number
+  cm_supera_corte: number
+  cm_no_supera_corte: number
+  umbral_mc: number
+  umbral_c: number
+}

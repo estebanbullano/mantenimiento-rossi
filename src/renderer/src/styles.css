@@ -1,0 +1,39 @@
+@import 'tailwindcss';
+@import '@fontsource/nunito/400.css';
+@import '@fontsource/nunito/600.css';
+@import '@fontsource/nunito/700.css';
+@import '@fontsource/nunito/800.css';
+
+/* Misma paleta que Compras Rossi */
+@theme {
+  --font-sans: 'Nunito', system-ui, sans-serif;
+  --color-primario: #e20018;
+  --color-primario-oscuro: #b30013;
+  --color-texto: #222;
+  --color-suave: #6b6b6b;
+  --color-borde: #e2e2e2;
+  --color-fondo-2: #f5f5f5;
+  --color-aprobado: #2e7d32;
+  --color-pendiente: #f9a825;
+  --color-revision: #1565c0;
+  --color-rechazado: #8e0000;
+}
+
+html, body, #root { height: 100%; }
+@layer base {
+  body { @apply bg-fondo-2 text-texto antialiased; -webkit-tap-highlight-color: transparent; }
+}
+
+@layer components {
+  .campo { @apply w-full rounded-lg border border-borde bg-white px-3 py-2 text-sm outline-none focus:border-primario focus:ring-2 focus:ring-primario/15 disabled:bg-fondo-2; }
+  .etiqueta { @apply mb-1 block text-xs font-bold uppercase tracking-wide text-suave; }
+  .tabla { @apply w-full border-collapse text-sm; }
+  .tabla th { @apply border-b border-borde bg-fondo-2 px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-suave; }
+  .tabla td { @apply border-b border-borde px-3 py-2 align-top; }
+  .tabla tbody tr:hover { @apply bg-fondo-2/60; }
+}
+
+@media print {
+  .no-imprimir { display: none !important; }
+  body { background: white; }
+}
