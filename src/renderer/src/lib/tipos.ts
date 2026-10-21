@@ -85,27 +85,68 @@ export const PRIORIDADES: Prioridad[] = ['urgente', 'alta', 'media', 'baja']
 
 export type EstadoPedido = 'nuevo' | 'aprobado' | 'rechazado' | 'en_ot' | 'cerrado'
 
+/** Estado del ticket tal como lo ve la gente: pendiente → en proceso → completado */
+export type EstadoTicket = 'pendiente' | 'proceso' | 'completado' | 'rechazado'
+export type Urgencia = 'alta' | 'media' | 'baja'
+export const URGENCIAS: [Urgencia, string][] = [
+  ['alta', 'Alta - la máquina está parada'],
+  ['media', 'Media - funciona con problemas'],
+  ['baja', 'Baja - puede esperar']
+]
+export type Disponibilidad = 'sin_verificar' | 'stock' | 'pedido' | 'transito'
+export const DISPONIBILIDADES: Record<Disponibilidad, string> = { sin_verificar: 'Sin verificar', stock: 'En stock', pedido: 'A pedir', transito: 'En tránsito' }
+export type Recursos = 'listo' | 'esperando' | 'sinmateriales'
+export const RECURSOS: Record<Recursos, string> = { listo: 'Listo para hacer', esperando: 'Esperando material', sinmateriales: 'Sin materiales cargados' }
+
+/** Áreas de la planta desde donde se piden reparaciones */
+export const AREAS = ['Acopio', 'Molino trigo', 'Molino maíz', 'Pellet', 'Caldera', 'Envasado kg', 'Envasado 25', 'Pastas', 'Balanza', 'Depósito', 'Legumbres', 'Premezcla', 'Recepción']
+
+export interface CambioFecha { de: string | null; a: string; motivo: string; fecha: string; avisado: boolean }
+
 export interface Pedido {
   id: string
   numero: number
+  titulo: string | null
   equipo_id: string | null
   ubicacion: string | null
   area: string | null
   descripcion: string
   equipo_detenido: boolean
+  urgencia_reportada: Urgencia | null
+  fecha_reporte: string
   solicitante_id: string
   estado: EstadoPedido
   prioridad: Prioridad | null
   fecha_comprometida: string | null
+  fecha_cierre_estimada: string | null
+  responsable_id: string | null
+  asignados_ids: string[]
+  tercerizado: boolean
+  tercerizado_detalle: string | null
+  duracion_dias: number | null
+  fecha_inicio: string | null
+  cambio_fecha: CambioFecha | null
   motivo_rechazo: string | null
   foto_ruta: string | null
   creado_en: string
+  // de la vista
   equipo_codigo?: string | null
   equipo_nombre?: string | null
   solicitante_nombre?: string | null
+  solicitante_email?: string | null
+  responsable_nombre?: string | null
+  asignados_nombres?: string[] | null
   orden_id?: string | null
   orden_estado?: EstadoOT | null
+  orden_numero?: number | null
+  recursos?: Recursos
+  comentarios?: number
+  dias_abierto?: number
 }
+
+export interface ComentarioPedido { id: string; pedido_id: string; autor_id: string | null; texto: string; creado_en: string; autor_nombre?: string }
+export interface MaterialPedido { id: string; pedido_id: string; articulo_id: string | null; nombre: string; cantidad: string | null; disponibilidad: Disponibilidad }
+export interface AgendaCelda { pedido_id: string; usuario_id: string; dia: string; fraccion: number; usuario_nombre: string; numero: number; titulo: string; prioridad: Prioridad | null; estado: EstadoPedido }
 
 export type EstadoOT = 'pendiente' | 'en_proceso' | 'completada' | 'cancelada'
 
