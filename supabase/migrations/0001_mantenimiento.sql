@@ -777,7 +777,8 @@ left join mant_tareas t on t.id = o.tarea_id
 left join mant_usuarios u on u.id = o.asignado_id
 left join mant_pedidos p on p.id = o.pedido_id;
 
-create or replace view mant_v_pedidos with (security_invoker = true) as
+drop view if exists mant_v_pedidos;
+create view mant_v_pedidos with (security_invoker = true) as
 select p.*, e.codigo as equipo_codigo, e.nombre as equipo_nombre,
        s.nombre as solicitante_nombre,
        (select o.id from mant_ordenes o where o.pedido_id = p.id order by o.creado_en desc limit 1) as orden_id,
