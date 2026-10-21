@@ -54,7 +54,7 @@ function Rutas() {
         <Route path="tareas" element={<Solo roles={['operario', ...MANT]}><MisTareas /></Solo>} />
         <Route path="ordenes" element={<Solo roles={STAFF}><Ordenes /></Solo>} />
         <Route path="ordenes/:id" element={<OrdenDetalle />} />
-        <Route path="agenda" element={<Solo roles={MANT}><Agenda /></Solo>} />
+        <Route path="agenda" element={<Agenda />} />
         <Route path="preventivo" element={<Solo roles={STAFF}><Preventivo /></Solo>} />
         <Route path="equipos" element={<Solo roles={[...STAFF, 'panolero']}><Equipos /></Solo>} />
         <Route path="equipos/qr" element={<Solo roles={MANT}><EtiquetasQR /></Solo>} />
