@@ -11,11 +11,10 @@ const I = (d: string) => <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0" f
 
 const ITEMS: Item[] = [
   { a: '/', txt: 'Inicio', icono: I('M3 11l9-8 9 8M5 10v10h14V10'), movil: true },
-  { a: '/pedido/nuevo', txt: 'Pedir reparación', icono: I('M12 5v14M5 12h14'), movil: true },
-  { a: '/pedidos', txt: 'Pedidos', icono: I('M4 4h16v16H4zM8 9h8M8 13h8M8 17h5') },
+  { a: '/pedidos', txt: 'Pedidos', icono: I('M4 4h16v16H4zM8 9h8M8 13h8M8 17h5'), movil: true },
   { a: '/tareas', txt: 'Mis tareas', icono: I('M9 11l3 3 8-8M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h11'), roles: ['operario', 'referente', 'supervisor'], movil: true },
   { a: '/ordenes', txt: 'Órdenes de trabajo', icono: I('M14 3v4h4M6 3h8l4 4v14H6zM9 13h6M9 17h6'), roles: ['referente', 'supervisor', 'director'] },
-  { a: '/agenda', txt: 'Agenda semanal', icono: I('M4 5h16v15H4zM4 10h16M9 3v4M15 3v4'), roles: ['referente', 'supervisor'] },
+  { a: '/agenda', txt: 'Agenda semanal', icono: I('M4 5h16v15H4zM4 10h16M9 3v4M15 3v4') },
   { a: '/preventivo', txt: 'Plan preventivo', icono: I('M12 8v4l3 2M21 12a9 9 0 1 1-9-9'), roles: ['referente', 'supervisor', 'director'] },
   { a: '/equipos', txt: 'Equipos y criticidad', icono: I('M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z'), roles: ['referente', 'supervisor', 'director', 'panolero'] },
   { a: '/panol', txt: 'Pañol', icono: I('M21 8l-9-5-9 5 9 5 9-5zM3 8v8l9 5 9-5V8M12 13v8'), roles: ['panolero', 'referente', 'supervisor', 'compras', 'director'] },
