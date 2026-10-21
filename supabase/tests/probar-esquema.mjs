@@ -3,7 +3,7 @@ import { PGlite } from '@electric-sql/pglite'
 import fs from 'node:fs'
 
 const db = new PGlite()
-const sql = fs.readFileSync(process.argv[2], 'utf8')
+const sql = process.argv.slice(2).map(f => fs.readFileSync(f, 'utf8')).join('\n')
 
 await db.exec(`
   create role anon nologin; create role authenticated nologin;
@@ -135,7 +135,7 @@ check(!!(await fails(null, `set role anon; select mant_generar_semana('2030-01-0
 await db.exec('reset role')
 const otOp = (await as(U.ref, `insert into mant_ordenes (tipo, titulo, asignado_id, estado) values ('correctiva','OT op',$1,'pendiente') returning id`, [U.op])).rows[0].id
 const pedAjeno = (await as(U.sol, `insert into mant_pedidos (descripcion, estado, prioridad) values ('ajeno','cerrado','urgente') returning id, estado, prioridad`)).rows[0]
-check(pedAjeno.estado === 'nuevo' && pedAjeno.prioridad === null, 'un pedido nuevo siempre arranca como nuevo, sin prioridad')
+check(pedAjeno.estado === 'nuevo' && pedAjeno.prioridad === 'media', 'un pedido nuevo siempre arranca como nuevo, con la prioridad de la urgencia reportada (no la que mande el solicitante)')
 check(!!(await fails(U.op, `update mant_ordenes set pedido_id=$1 where id=$2`, [pedAjeno.id, otOp])), 'el operario no puede colgar su OT de un pedido ajeno')
 check(!!(await fails(U.op, `update mant_ordenes set tarea_id=$1 where id=$2`, [tarea, otOp])), 'ni cambiarle la tarea preventiva')
 check(!!(await fails(U.op, `update mant_ordenes set completada_en=now() where id=$1`, [otOp])), 'ni setear la fecha de cierre a mano')
@@ -169,6 +169,40 @@ console.log('Auditoría e indicadores')
 check((await as(U.ref, `select count(*)::int n from mant_auditoria`)).rows[0].n > 10, 'cada cambio queda auditado')
 const ind = (await as(U.ref, `select * from mant_v_indicadores_semana`)).rows
 check(ind.length >= 1, 'indicadores por semana: ' + JSON.stringify(ind))
+
+console.log('Tickets (forma del panel)')
+const tk = (await as(U.sol, `insert into mant_pedidos (equipo_id,area,descripcion,urgencia_reportada,fecha_reporte) values ($1,'MOLINO TRIGO','Ruido en el reductor','alta',current_date-3) returning id`, [eq])).rows[0].id
+let vt = (await as(U.sol, `select * from mant_v_pedidos where id=$1`, [tk])).rows[0]
+check(vt.prioridad === 'alta' && vt.equipo_detenido === true && vt.titulo === 'Ruido en el reductor' && vt.recursos === 'sinmateriales' && vt.dias_abierto === 3, 'la urgencia reportada fija la prioridad inicial, título y días abiertos')
+check(!!(await fails(U.sol, `select mant_cambiar_fecha_cierre($1, current_date+7)`, [tk])), 'el solicitante no define fecha de cierre')
+await as(U.ref, `select mant_cambiar_fecha_cierre($1, current_date+7)`, [tk])
+check(!!(await fails(U.ref, `select mant_cambiar_fecha_cierre($1, current_date+15)`, [tk])), 'cambiar la fecha sin motivo falla')
+await as(U.ref, `select mant_cambiar_fecha_cierre($1, current_date+15, 'Falta el repuesto')`, [tk])
+vt = (await as(U.sol, `select * from mant_v_pedidos where id=$1`, [tk])).rows[0]
+check(vt.cambio_fecha && vt.cambio_fecha.avisado === false && Number(vt.comentarios) === 1, 'el cambio de fecha deja comentario, motivo y aviso pendiente')
+check((await as(U.sol, `select texto from mant_pedido_comentarios where pedido_id=$1`, [tk])).rows.length === 1, 'el solicitante ve los comentarios de seguimiento')
+await as(U.sol, `insert into mant_pedido_comentarios (pedido_id, texto) values ($1, '¿Novedades?')`, [tk])
+check(!!(await fails(U.sol, `insert into mant_pedido_materiales (pedido_id, nombre) values ($1, 'Rodamiento')`, [tk])), 'el solicitante no carga materiales')
+await as(U.ref, `insert into mant_pedido_materiales (pedido_id, nombre, cantidad, disponibilidad) values ($1, 'Rodamiento 6205', '2', 'pedido')`, [tk])
+check((await as(U.sol, `select recursos from mant_v_pedidos where id=$1`, [tk])).rows[0].recursos === 'esperando', 'con un material a pedir queda "esperando material"')
+await as(U.ref, `update mant_pedido_materiales set disponibilidad='stock' where pedido_id=$1`, [tk])
+check((await as(U.sol, `select recursos from mant_v_pedidos where id=$1`, [tk])).rows[0].recursos === 'listo', 'con todo en stock queda "listo para hacer"')
+check(!!(await fails(U.ref, `select mant_cargar_agenda($1)`, [tk])), 'sin personal asignado no se carga en la agenda')
+await as(U.ref, `update mant_pedidos set asignados_ids=array[$1,$2]::uuid[], duracion_dias=1.5, fecha_inicio=current_date, responsable_id=$1 where id=$3`, [U.op, U.op2, tk])
+let sob = (await as(U.ref, `select mant_cargar_agenda($1) s`, [tk])).rows[0].s
+check(sob.length === 0 && (await as(U.op, `select count(*)::int n, sum(fraccion) f from mant_pedido_agenda where pedido_id=$1`, [tk])).rows[0].n === 4, '1,5 días × 2 personas = 4 celdas (1 + 0,5 cada uno)')
+const tk2 = (await as(U.sol, `insert into mant_pedidos (descripcion,urgencia_reportada) values ('Otro','media') returning id`)).rows[0].id
+await as(U.ref, `update mant_pedidos set asignados_ids=array[$1]::uuid[], duracion_dias=1, fecha_inicio=current_date where id=$2`, [U.op, tk2])
+sob = (await as(U.ref, `select mant_cargar_agenda($1) s`, [tk2])).rows[0].s
+check(sob.length === 1 && Number(sob[0].total) === 2, 'avisa la sobrecarga de la persona ese día')
+const otk = (await as(U.ref, `select mant_estado_pedido($1, 'proceso') o`, [tk])).rows[0].o
+const ot1 = (await as(U.ref, `select * from mant_ordenes where id=$1`, [otk])).rows[0]
+check(otk && ot1.prioridad === 'alta' && ot1.asignado_id === U.op && Number(ot1.duracion_estimada_horas) === 12 && (await as(U.sol, `select estado from mant_v_pedidos where id=$1`, [tk])).rows[0].estado === 'en_ot', 'pasar a "en proceso" crea la OT con prioridad, responsable y duración')
+await as(U.ref, `update mant_pedidos set prioridad='baja' where id=$1`, [tk])
+check((await as(U.ref, `select prioridad from mant_ordenes where id=$1`, [otk])).rows[0].prioridad === 'baja', 'la prioridad del ticket se refleja en la OT')
+check((await as(U.op2, `select count(*)::int n from mant_pedidos where id=$1`, [tk])).rows[0].n === 1, 'el personal asignado ve el ticket')
+await as(U.ref, `select mant_estado_pedido($1, 'pendiente')`, [tk])
+check((await as(U.sol, `select estado from mant_v_pedidos where id=$1`, [tk])).rows[0].estado === 'nuevo' && (await as(U.ref, `select estado from mant_ordenes where id=$1`, [otk])).rows[0].estado === 'cancelada', 'volver a "pendiente" cancela la OT')
 
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)
