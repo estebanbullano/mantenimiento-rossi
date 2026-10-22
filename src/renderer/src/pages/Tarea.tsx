@@ -313,7 +313,7 @@ export function TareaCelular() {
             </>}
           </>)}
 
-          {/* Informe: dictado, audio y video */}
+          {/* Qué se hizo: audio o video */}
           <Informe orden={o} puede={puede} medios={data.medios} informe={informe} onInforme={(t) => void guardarInforme(t)} onCambio={() => void recargar()} />
 
           {/* Foto final */}
@@ -338,114 +338,95 @@ export function TareaCelular() {
 }
 
 // ---------------------------------------------------------------------
-// Informe de lo que se hizo: dictado a texto, audio y video
+// Qué se hizo: el operario graba un audio o un video contándolo.
+// El texto lo escribe después el administrador escuchándolo.
 // ---------------------------------------------------------------------
-type Reconocedor = { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { resultIndex: number; results: { isFinal: boolean; 0: { transcript: string } }[] }) => void) | null; onend: (() => void) | null; onerror: ((e: { error: string }) => void) | null }
-const crearReconocedor = (): Reconocedor | null => {
-  const w = window as unknown as { SpeechRecognition?: new () => Reconocedor; webkitSpeechRecognition?: new () => Reconocedor }
-  const C = w.SpeechRecognition ?? w.webkitSpeechRecognition
-  if (!C) return null
-  const r = new C(); r.lang = 'es-AR'; r.continuous = true; r.interimResults = true
-  return r
-}
-
 function Informe({ orden, puede, medios, informe, onInforme, onCambio }:
   { orden: Orden; puede: boolean; medios: Medio[]; informe: string; onInforme: (t: string) => void; onCambio: () => void }) {
   const avisar = useAviso()
   const [texto, setTexto] = useState(informe)
-  const [dictando, setDictando] = useState(false)
-  const [parcial, setParcial] = useState('')
   const [grabando, setGrabando] = useState(false)
+  const [seg, setSeg] = useState(0)
   const [subiendo, setSubiendo] = useState(false)
-  const rec = useRef<Reconocedor | null>(null)
   const grab = useRef<MediaRecorder | null>(null)
   const trozos = useRef<Blob[]>([])
-  const textoGrab = useRef('')
   const inicioGrab = useRef(0)
   useEffect(() => setTexto(informe), [informe])
-  const hayDictado = 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window
-
-  function escuchar(onFinal: (t: string) => void) {
-    const r = crearReconocedor()
-    if (!r) { avisar('Este celular no permite dictado: escribilo a mano.', 'error'); return null }
-    r.onresult = (e) => {
-      let interino = ''
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript
-        if (e.results[i].isFinal) onFinal(t.trim()); else interino += t
-      }
-      setParcial(interino)
-    }
-    r.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') avisar(`Dictado: ${e.error}`, 'error') }
-    r.onend = () => { setDictando(false); setParcial('') }
-    r.start()
-    return r
-  }
-
-  function dictar() {
-    if (dictando) { rec.current?.stop(); return }
-    rec.current = escuchar((t) => setTexto((x) => { const n = (x ? x.trimEnd() + ' ' : '') + t; onInforme(n); return n }))
-    if (rec.current) setDictando(true)
-  }
+  useEffect(() => {
+    if (!grabando) return
+    const t = setInterval(() => setSeg(Math.round((Date.now() - inicioGrab.current) / 1000)), 500)
+    return () => clearInterval(t)
+  }, [grabando])
 
   async function grabarAudio() {
-    if (grabando) { grab.current?.stop(); rec.current?.stop(); return }
+    if (grabando) { grab.current?.stop(); return }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const tipo = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
-      const mr = new MediaRecorder(stream, { mimeType: tipo })
-      trozos.current = []; textoGrab.current = ''; inicioGrab.current = Date.now()
+      const tipo = ['audio/webm', 'audio/mp4', 'audio/ogg'].find((t) => MediaRecorder.isTypeSupported(t)) ?? ''
+      const mr = tipo ? new MediaRecorder(stream, { mimeType: tipo }) : new MediaRecorder(stream)
+      trozos.current = []; inicioGrab.current = Date.now(); setSeg(0)
       mr.ondataavailable = (e) => e.data.size && trozos.current.push(e.data)
       mr.onstop = async () => {
         stream.getTracks().forEach((t) => t.stop())
         setGrabando(false)
-        const archivo = new File(trozos.current, `audio.${tipo.includes('webm') ? 'webm' : 'm4a'}`, { type: tipo })
-        await subirMedio(archivo, 'audio', Math.round((Date.now() - inicioGrab.current) / 1000), textoGrab.current.trim())
+        const t = mr.mimeType || tipo || 'audio/webm'
+        const archivo = new File(trozos.current, `audio.${t.includes('mp4') ? 'm4a' : t.includes('ogg') ? 'ogg' : 'webm'}`, { type: t })
+        await subirMedio(archivo, 'audio', Math.round((Date.now() - inicioGrab.current) / 1000))
       }
-      mr.start(); grab.current = mr; setGrabando(true)
-      // a la vez, pasa a texto lo que se dice (si el celular lo permite)
-      rec.current = escuchar((t) => { textoGrab.current += ' ' + t })
-    } catch (e) { avisar(mensajeError(e), 'error') }
+      mr.start(1000); grab.current = mr; setGrabando(true)
+    } catch (e) { avisar(`No se pudo usar el micrófono: ${mensajeError(e)}`, 'error') }
   }
 
-  async function subirMedio(f: File, tipo: 'audio' | 'video', duracion: number | null, transcripcion: string) {
+  async function subirMedio(f: File, tipo: 'audio' | 'video', duracion: number | null) {
     if (f.size > 45 * 1024 * 1024) { avisar('El video es muy largo: grabá menos de un minuto.', 'error'); return }
     setSubiendo(true)
     try {
       const ruta = await subirArchivo(`ot/${orden.id}/${tipo}`, f)
-      const { error } = await supabase.from('mant_ot_medios').insert({ orden_id: orden.id, tipo, ruta, duracion_seg: duracion, transcripcion: transcripcion || null })
+      const { error } = await supabase.from('mant_ot_medios').insert({ orden_id: orden.id, tipo, ruta, duracion_seg: duracion })
       if (error) throw error
-      if (transcripcion) { const n = (texto ? texto.trimEnd() + '\n' : '') + transcripcion; setTexto(n); onInforme(n) }
+      avisar(tipo === 'audio' ? 'Audio guardado.' : 'Video guardado.')
       onCambio()
     } catch (e) { avisar(mensajeError(e), 'error') }
     setSubiendo(false)
   }
 
-  return sec('Qué se hizo', <>
-    <textarea className="campo min-h-[96px] resize-y" disabled={!puede} value={texto + (parcial ? ` ${parcial}…` : '')} placeholder="Contá qué hiciste, qué encontraste y qué quedó pendiente. Podés dictarlo."
-      onChange={(e) => setTexto(e.target.value)} onBlur={() => texto !== informe && onInforme(texto)} />
+  async function borrar(m: Medio) {
+    if (!confirm(`¿Borrar este ${m.tipo}?`)) return
+    const { error } = await supabase.from('mant_ot_medios').delete().eq('id', m.id)
+    if (error) avisar(mensajeError(error), 'error'); else onCambio()
+  }
+
+  return sec(<>Qué se hizo <span className="font-normal text-tenue">· contalo en un audio o video</span></>, <>
     {puede && (
-      <div className="grid grid-cols-3 gap-2">
-        <button type="button" onClick={dictar} disabled={!hayDictado || grabando}
-          className={`min-h-[46px] rounded-[14px] border px-2 text-[13px] font-semibold ${dictando ? 'border-primario bg-primario text-white' : 'border-borde-campo bg-white text-texto'}`}>{dictando ? '■ Parar' : '🎤 Dictar'}</button>
-        <button type="button" onClick={() => void grabarAudio()} disabled={dictando || subiendo}
-          className={`min-h-[46px] rounded-[14px] border px-2 text-[13px] font-semibold ${grabando ? 'border-primario bg-primario text-white' : 'border-borde-campo bg-white text-texto'}`}>{grabando ? '■ Terminar audio' : '● Grabar audio'}</button>
-        <BotonCamara texto="▶ Video" video soloCamara cargando={subiendo} clase="border border-borde-campo text-[13px] text-texto" onArchivo={(f) => void subirMedio(f, 'video', null, '')} />
+      <div className="grid grid-cols-2 gap-2">
+        <button type="button" onClick={() => void grabarAudio()} disabled={subiendo}
+          className={`min-h-[52px] rounded-[14px] border px-2 text-sm font-semibold ${grabando ? 'border-primario bg-primario text-white' : 'border-borde-campo bg-white text-texto'}`}>
+          {grabando ? `■ Terminar audio ${fmtReloj(seg).replace(/^00:/, '')}` : subiendo ? 'Subiendo…' : '🎤 Grabar audio'}</button>
+        <BotonCamara texto="▶ Grabar video" video soloCamara cargando={subiendo} clase="min-h-[52px] border border-borde-campo text-sm text-texto" onArchivo={(f) => void subirMedio(f, 'video', null)} />
       </div>
     )}
-    {grabando && <span className="text-xs text-primario-oscuro">Grabando… hablá normal, se va pasando a texto.</span>}
-    {medios.map((m) => <MedioFila key={m.id} m={m} />)}
+    {grabando && <span className="text-xs text-primario-oscuro">Grabando… contá qué hiciste, qué encontraste y qué quedó pendiente. Tocá "Terminar audio" al final.</span>}
+    {medios.map((m) => <MedioFila key={m.id} m={m} onBorrar={puede ? () => void borrar(m) : undefined} />)}
+    {puede && !medios.length && !grabando && <span className="text-xs text-tenue">El supervisor lo escucha y lo pasa al procedimiento.</span>}
+    <details className="rounded-[14px] bg-fondo px-3 py-2" open={!!texto}>
+      <summary className="cursor-pointer text-[13px] text-suave">Escribir una nota (opcional)</summary>
+      <textarea className="campo mt-2 min-h-[80px] resize-y" disabled={!puede} value={texto} placeholder="Algo corto que quieras dejar por escrito."
+        onChange={(e) => setTexto(e.target.value)} onBlur={() => texto !== informe && onInforme(texto)} />
+    </details>
   </>)
 }
 
-function MedioFila({ m }: { m: Medio }) {
+function MedioFila({ m, onBorrar }: { m: Medio; onBorrar?: () => void }) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => { void urlFirmada(m.ruta).then(setUrl) }, [m.ruta])
   return (
     <div className="flex flex-col gap-1.5 rounded-xl bg-fondo p-2.5">
-      <span className="text-xs text-tenue">{m.tipo === 'audio' ? 'Audio' : 'Video'} · {new Date(m.creado_en).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
-      {url && (m.tipo === 'audio' ? <audio controls src={url} className="w-full" /> : <video controls src={url} className="max-h-48 w-full rounded-lg" />)}
-      {m.transcripcion && <span className="text-[13px] italic text-texto-2">“{m.transcripcion}”</span>}
+      <span className="flex items-center justify-between text-xs text-tenue">
+        <span>{m.tipo === 'audio' ? 'Audio' : 'Video'} · {new Date(m.creado_en).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })}</span>
+        {onBorrar && <button className="rounded-full px-2 py-0.5 text-primario-oscuro" onClick={onBorrar}>Borrar</button>}
+      </span>
+      {url && (m.tipo === 'audio' ? <audio controls src={url} className="w-full" /> : <video controls playsInline src={url} className="max-h-48 w-full rounded-lg" />)}
+      {m.transcripcion && <span className="text-[13px] text-texto-2">{m.transcripcion}</span>}
     </div>
   )
 }

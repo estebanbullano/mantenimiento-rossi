@@ -115,7 +115,7 @@ export function OrdenDetalle() {
               {o.tiempo_real_min != null && <Dato t="Tiempo real" v={fmtMin(o.tiempo_real_min)} />}
             </dl>
             {o.descripcion && o.descripcion !== o.titulo && <p className="mt-4 whitespace-pre-wrap rounded-lg bg-fondo-2 p-3 text-sm">{o.descripcion}</p>}
-            {o.comentario_cierre && <p className="mt-3 rounded-lg bg-aprobado/10 p-3 text-sm"><b>Cierre:</b> {o.comentario_cierre}</p>}
+            {o.comentario_cierre && !esMant && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-aprobado/10 p-3 text-sm"><b>Informe:</b> {o.comentario_cierre}</p>}
           </Tarjeta>
 
           {data.items.length > 0 && (

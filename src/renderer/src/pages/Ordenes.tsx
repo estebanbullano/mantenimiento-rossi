@@ -328,7 +328,7 @@ function PanelSupervisor({ d, esMant, onCambio }: { d: Datos; esMant: boolean; o
                       </div>
                     )}
                     {esMant && rev === 'aprobada' && <button className="self-start text-xs text-tenue underline" onClick={() => void revisar(o, 'pendiente')}>Deshacer</button>}
-                    <button className="self-start py-1 text-[13px] font-semibold text-primario-oscuro" onClick={() => nav(`/ordenes/${o.id}`)}>Revisar pasos, repuestos y guardar referencia →</button>
+                    <button className="self-start py-1 text-[13px] font-semibold text-primario-oscuro" onClick={() => nav(`/ordenes/${o.id}`)}>Escuchar audio, revisar pasos y cargar al plan →</button>
                   </div>
                 </div>
               )

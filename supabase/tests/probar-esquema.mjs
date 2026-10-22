@@ -282,5 +282,12 @@ const pr = (await as(U.ref, `select * from mant_v_tarea_prediccion where tarea_i
 check(Number(pr.ejecuciones) === 1 && pr.minutos_promedio === mins, 'la predicción de tiempo sale de las veces que se hizo')
 check(!!(await fails(U.op, `select mant_aprender_de_ot($1)`, [ox])), 'el operario no guarda referencias')
 
+console.log('Revisión con audio (0006)')
+await as(U.ref, `update mant_ot_medios set transcripcion='Se cambió el rodamiento del lado acople y se engrasó' where orden_id=$1`, [ox])
+check((await as(U.ref, `select transcripcion from mant_ot_medios where orden_id=$1`, [ox])).rows[0].transcripcion.includes('engrasó'), 'el administrador escribe el texto del audio')
+const apr2 = (await as(U.ref, `select mant_aprender_de_ot($1, $2::jsonb) r`, [ox, JSON.stringify([{ texto: 'Cortar energía y bloquear' }, { texto: '', foto_ruta: '' }, { texto: 'Cambiar rodamiento', foto_ruta: 'p1.jpg' }, { texto: 'Engrasar' }])])).rows[0].r
+const pasos2 = (await as(U.op2, `select orden, texto, foto_ruta from mant_tarea_pasos where tarea_id=$1 order by orden`, [tar])).rows
+check(apr2.pasos === 3 && pasos2.length === 3 && pasos2[0].texto === 'Cortar energía y bloquear' && pasos2[1].foto_ruta === 'p1.jpg' && pasos2[2].orden === 3, 'los pasos que escribe el administrador quedan como procedimiento (los vacíos se ignoran)')
+
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)
