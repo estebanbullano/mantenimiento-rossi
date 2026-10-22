@@ -83,17 +83,27 @@ export function OrdenDetalle() {
     setRepTexto(''); setRepCant('1'); setRepArt(null)
   }
 
+  async function noRealizada() {
+    const det = prompt('No se hizo porque la máquina estuvo parada. Detalle opcional (ej.: bajó la producción de legumbres):', '')
+    if (det === null) return
+    const { data: prox, error } = await supabase.rpc('mant_ot_no_realizada', { p_orden: id, p_motivo: 'maquina_parada', p_detalle: det.trim() || null })
+    if (error) return avisar(mensajeError(error), 'error')
+    avisar(`Asentado: no realizada por máquina parada${prox ? `. Vuelve a tocar el ${String(prox).split('-').reverse().join('/')}` : ''}.`)
+    void recargar()
+  }
+
   if (cargando) return <Cargando />
   if (!o) return <Pagina titulo="Orden no encontrada"><ErrorBox texto={error ?? 'No existe o no tenés acceso.'} /></Pagina>
 
   return (
     <Pagina titulo={o.titulo}
-      subtitulo={<span className="flex flex-wrap items-center gap-2">{numOT(o.numero)} <InsEstadoOT e={o.estado} /> <InsPrioridad p={o.prioridad} />
+      subtitulo={<span className="flex flex-wrap items-center gap-2">{numOT(o.numero)} <InsEstadoOT e={o.estado} motivo={o.no_realizada_motivo} /> <InsPrioridad p={o.prioridad} />
         <Insignia t={o.tipo === 'preventiva' ? 'azul' : 'gris'}>{o.tipo === 'preventiva' ? 'Preventivo' : 'Correctivo'}</Insignia>
         {o.vencida && <Insignia t="rojo">Vencida</Insignia>}</span>}
       acciones={<>
         <Boton variante="fantasma" onClick={() => nav(-1)}>← Volver</Boton>
         {esMant && abierta && <Boton variante="secundario" onClick={() => setEditar(true)}>Reasignar / editar</Boton>}
+        {esMant && abierta && o.tipo === 'preventiva' && <Boton variante="secundario" onClick={() => void noRealizada()}>No se hizo (máquina parada)</Boton>}
         {puede('referente', 'supervisor', 'panolero') && <Boton variante="secundario" onClick={() => nav(`/compras?orden=${o.id}`)}>Pedir compra</Boton>}
       </>}>
       <ErrorBox texto={error} />
@@ -115,7 +125,8 @@ export function OrdenDetalle() {
               {o.tiempo_real_min != null && <Dato t="Tiempo real" v={fmtMin(o.tiempo_real_min)} />}
             </dl>
             {o.descripcion && o.descripcion !== o.titulo && <p className="mt-4 whitespace-pre-wrap rounded-lg bg-fondo-2 p-3 text-sm">{o.descripcion}</p>}
-            {o.comentario_cierre && !esMant && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-aprobado/10 p-3 text-sm"><b>Informe:</b> {o.comentario_cierre}</p>}
+            {o.estado === 'no_realizada' && <p className="mt-3 whitespace-pre-wrap rounded-lg border border-[#f1d49a] bg-[#fff6e5] p-3 text-sm"><b>No realizada{o.no_realizada_motivo === 'maquina_parada' ? ' · máquina parada' : ''}:</b> {o.comentario_cierre ?? '—'}</p>}
+            {o.comentario_cierre && !esMant && o.estado !== 'no_realizada' && <p className="mt-3 whitespace-pre-wrap rounded-lg bg-aprobado/10 p-3 text-sm"><b>Informe:</b> {o.comentario_cierre}</p>}
           </Tarjeta>
 
           {data.items.length > 0 && (

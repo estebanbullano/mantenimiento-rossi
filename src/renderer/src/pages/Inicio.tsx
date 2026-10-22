@@ -61,7 +61,7 @@ export function Inicio() {
   if (!data) return <Pagina titulo="Panel de mantenimiento"><ErrorBox texto={error} /></Pagina>
 
   const otTot = data.ots.length, otOk = data.ots.filter((o) => o.estado === 'completada').length
-  const prev = data.ots.filter((o) => o.tipo === 'preventiva'), prevOk = prev.filter((o) => o.estado === 'completada').length
+  const prev = data.ots.filter((o) => o.tipo === 'preventiva' && o.estado !== 'no_realizada'), prevOk = prev.filter((o) => o.estado === 'completada').length
   const abiertos = data.pedidos.filter((p) => p.estado === 'nuevo' || p.estado === 'aprobado' || p.estado === 'en_ot')
   const sinAsignar = abiertos.filter((p) => p.estado === 'nuevo').length
   const horas = (o: Orden) => (o.tiempo_real_min ? o.tiempo_real_min / 60 : o.duracion_estimada_horas ?? 0)

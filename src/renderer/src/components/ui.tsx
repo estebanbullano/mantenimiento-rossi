@@ -203,9 +203,9 @@ const PRIO: Record<Prioridad, [Tono, string]> = { urgente: ['primario', 'Urgente
 export const InsPrioridad = ({ p, ancho }: { p: Prioridad | null | undefined; ancho?: boolean }) =>
   p ? <Insignia t={PRIO[p][0]} ancho={ancho}>{PRIO[p][1]}</Insignia> : <Insignia t="gris" ancho={ancho}>Sin prioridad</Insignia>
 
-const EOT: Record<EstadoOT, [Tono, string]> = { pendiente: ['gris', 'Pendiente'], en_proceso: ['azul', 'En proceso'], completada: ['verde', 'Completado'], cancelada: ['gris', 'Cancelada'] }
-export const InsEstadoOT = ({ e, vencida }: { e: EstadoOT; vencida?: boolean }) =>
-  vencida ? <Insignia t="rojo">Vencida</Insignia> : <Insignia t={EOT[e][0]}>{EOT[e][1]}</Insignia>
+const EOT: Record<EstadoOT, [Tono, string]> = { pendiente: ['gris', 'Pendiente'], en_proceso: ['azul', 'En proceso'], completada: ['verde', 'Completado'], cancelada: ['gris', 'Cancelada'], no_realizada: ['amarillo', 'No realizada · máquina parada'] }
+export const InsEstadoOT = ({ e, vencida, motivo }: { e: EstadoOT; vencida?: boolean; motivo?: string | null }) =>
+  vencida ? <Insignia t="rojo">Vencida</Insignia> : e === 'no_realizada' && motivo === 'otro' ? <Insignia t="amarillo">No realizada</Insignia> : <Insignia t={EOT[e][0]}>{EOT[e][1]}</Insignia>
 
 /** Estado del pedido como lo ve la bandeja: Nuevo (sin prioridad) · Pendiente · En proceso · Completado */
 export function estadoBandeja(e: EstadoPedido, prioridad: Prioridad | null | undefined): [Tono, string] {

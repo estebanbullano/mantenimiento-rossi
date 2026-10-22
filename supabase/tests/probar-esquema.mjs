@@ -335,5 +335,51 @@ check(new Set(fmn).size === 4 && fmn[4] === fmn[0], 'las mensuales se reparten e
 check(pendAntes === 12 && rp.ots_movidas + rp.ots_canceladas === 13 && rp.ots_canceladas > 0, `las OT sin asignar se mueven (${rp.ots_movidas}) o se cancelan (${rp.ots_canceladas})`)
 check((await as(U.ref, `select count(*)::int n from mant_ordenes where tarea_id = any($1::uuid[]) and estado='pendiente' and fecha_programada <> (select proxima_fecha from mant_tareas where id = tarea_id)`, [[...anuales, ...mensuales]])).rows[0].n === 0, 'las OT que quedan pendientes tienen la nueva fecha')
 
+console.log('Calendario, horas y máquina parada (0008)')
+// mover en el calendario
+const tm = (await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha) values ($1,'Engrase general',1,'meses',current_date + 3) returning id`, [eq])).rows[0].id
+await as(U.ref, `select mant_generar_ots(array[$1::uuid], $2::uuid, current_date + 3)`, [tm, U.op])
+check(!!(await fails(U.op, `select mant_mover_tarea($1, current_date + 10)`, [tm])), 'un operario no mueve tareas del plan')
+const mv = (await as(U.ref, `select mant_mover_tarea($1, current_date + 10, 'Parada de planta') n`, [tm])).rows[0].n
+const tm1 = (await as(U.ref, `select (proxima_fecha - current_date) d from mant_tareas where id=$1`, [tm])).rows[0].d
+const om = (await as(U.ref, `select (fecha_programada - current_date) d from mant_ordenes where tarea_id=$1 and estado='pendiente'`, [tm])).rows[0].d
+const hm = (await as(U.ref, `select * from mant_tareas_historial where tarea_id=$1 and fecha_nueva is not null`, [tm])).rows[0]
+check(mv === 1 && tm1 === 10 && om === 10 && hm?.motivo === 'Parada de planta', 'arrastrar en el calendario mueve la tarea, su OT pendiente y queda en el historial')
+await as(U.ref, `select mant_ajustar_frecuencia($1, 2, 'semanas', 'Más seguido', current_date + 5)`, [tm])
+const tm2 = (await as(U.ref, `select frecuencia_valor v, frecuencia_unidad u, (proxima_fecha - current_date) d from mant_tareas where id=$1`, [tm])).rows[0]
+check(tm2.v === 2 && tm2.u === 'semanas' && tm2.d === 5, 'editar frecuencia y próxima fecha desde el calendario')
+check(!!(await fails(U.ref, `select mant_ajustar_frecuencia($1, 0, 'semanas', 'x')`, [tm])), 'no acepta frecuencia 0')
+// horas de uso
+await as(U.op, `insert into mant_equipo_horas (equipo_id, horas, leida_en) values ($1, 1200, now() - interval '10 days')`, [eq])
+await as(U.op, `insert into mant_equipo_horas (equipo_id, horas) values ($1, 1440)`, [eq])
+check(Number((await as(U.sol, `select horas_uso from mant_equipo_uso where equipo_id=$1`, [eq])).rows[0].horas_uso) === 1440, 'la ficha muestra la última lectura del horómetro')
+check(!!(await fails(U.op, `insert into mant_equipo_horas (equipo_id, horas) values ($1, 100)`, [eq])), 'una lectura menor que la anterior pide aclaración')
+check(!!(await fails(U.sol, `insert into mant_equipo_horas (equipo_id, horas) values ($1, 1500)`, [eq])), 'un solicitante no carga horas')
+check(!!(await fails(U.op, `insert into mant_equipo_horas (equipo_id, horas, origen) values ($1, 1500, 'plc')`, [eq])), 'desde la app no se cargan lecturas como si fueran del PLC')
+check(!!(await fails(U.op, `select mant_plc_clave()`)), 'el operario no ve la clave del PLC')
+const clave = (await as(U.ref, `select mant_plc_clave() c`)).rows[0].c
+check(!!(await fails(null, `select mant_plc_horas('mala', 'FP-PL-HORNO-1', 1500)`)), 'el PLC con clave equivocada se rechaza')
+check(!!(await fails(null, `select mant_plc_horas($1, 'FP-PL-HORNO-1', 1500)`, [clave])), 'si el equipo no tiene PLC habilitado se rechaza')
+await as(U.ref, `insert into mant_equipo_uso (equipo_id, plc_habilitado, plc_protocolo, plc_direccion, plc_tag) values ($1, true, 'Modbus TCP', '192.168.1.50', 'HR40001') on conflict (equipo_id) do update set plc_habilitado = true, plc_protocolo='Modbus TCP'`, [eq])
+await as(null, `select mant_plc_horas($1, 'FP-PL-HORNO-1', 1500)`, [clave])
+const ul = (await as(U.ref, `select horas_uso from mant_equipo_uso where equipo_id=$1`, [eq])).rows[0]
+check(Number(ul.horas_uso) === 1500 && (await as(U.ref, `select origen from mant_equipo_horas where equipo_id=$1 order by leida_en desc limit 1`, [eq])).rows[0].origen === 'plc', 'el PLC manda las horas con la clave y quedan registradas como lectura del PLC')
+check(!(await as(U.ref, `select * from mant_plc_clave`).catch(() => ({ rows: [] }))).rows.length, 'la tabla de la clave no se lee directo')
+// máquina parada
+const tp = (await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha) values ($1,'Limpieza de tolva',1,'meses',current_date - 2) returning id`, [eq])).rows[0].id
+await as(U.ref, `select mant_generar_ots(array[$1::uuid], $2::uuid, current_date)`, [tp, U.op])
+const op0 = (await as(U.ref, `select id from mant_ordenes where tarea_id=$1 and estado='pendiente'`, [tp])).rows[0].id
+check(!!(await fails(U.op2, `select mant_ot_no_realizada($1)`, [op0])), 'otro operario no la marca como no realizada')
+check(!!(await fails(U.op, `select mant_ot_no_realizada($1, 'otro', '')`, [op0])), 'con "otro motivo" hay que explicar por qué')
+await as(U.op, `select mant_ot_marcar($1,'inicio')`, [op0])
+const prox = (await as(U.op, `select (mant_ot_no_realizada($1, 'maquina_parada', 'Sin producción de legumbres desde el lunes') - current_date) d`, [op0])).rows[0].d
+const onr = (await as(U.ref, `select estado, no_realizada_motivo, comentario_cierre, completada_en is not null c, no_realizada_por from mant_ordenes where id=$1`, [op0])).rows[0]
+check(onr.estado === 'no_realizada' && onr.no_realizada_motivo === 'maquina_parada' && onr.comentario_cierre.includes('legumbres') && onr.c && onr.no_realizada_por === U.op, 'el operario deja asentado que no se hizo por máquina parada')
+check(prox >= 28 && prox <= 31, 'la tarea se reprograma a la próxima vez según su frecuencia')
+check((await as(U.ref, `select ultima_ejecucion from mant_tareas where id=$1`, [tp])).rows[0].ultima_ejecucion === null, 'no cuenta como ejecutada')
+check((await as(U.ref, `select mant_ot_reloj($1) r`, [op0])).rows[0].r === 'terminada', 'si había arrancado el cronómetro, se cierra')
+check((await as(U.ref, `select count(*)::int n from mant_v_ordenes where equipo_id=$1 and estado='no_realizada' and no_realizada_motivo='maquina_parada'`, [eq])).rows[0].n === 1, 'queda en el historial de la máquina, con el motivo')
+check(!!(await fails(U.op, `select mant_ot_no_realizada($1)`, [op0])), 'no se marca dos veces')
+
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)

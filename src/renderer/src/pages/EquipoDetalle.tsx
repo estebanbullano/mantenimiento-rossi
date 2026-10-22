@@ -9,9 +9,10 @@ import { Boton, Campo, Cargando, ErrorBox, InsCriticidad, Modal, Pagina, Tarjeta
 import { SelectorArticulo } from '@/components/selectores'
 import { FormEquipo } from './Equipos'
 import { HistorialEquipo } from '@/components/HistorialEquipo'
+import { HorasUso } from '@/components/HorasUso'
 
 type RepRef = { articulo_id: string; cantidad_ref: number; articulo: { codigo: string; descripcion: string; stock_actual: number; unidad: string } }
-type Hist = { id: string; valor_anterior: number; unidad_anterior: Unidad; valor_nuevo: number; unidad_nueva: Unidad; motivo: string | null; creado_en: string; tarea_id: string }
+type Hist = { id: string; valor_anterior: number; unidad_anterior: Unidad; valor_nuevo: number; unidad_nueva: Unidad; motivo: string | null; creado_en: string; tarea_id: string; fecha_anterior: string | null; fecha_nueva: string | null }
 type TareaRep = { tarea_id: string; articulo_id: string; cantidad: number; articulo: { codigo: string; descripcion: string } }
 
 export function EquipoDetalle() {
@@ -126,7 +127,7 @@ export function EquipoDetalle() {
                       )}
                       {data.historial.filter((h) => h.tarea_id === t.id).map((h) => (
                         <div key={h.id} className="mt-1 text-xs text-revision">
-                          {fmtFechaHora(h.creado_en)}: de {h.valor_anterior} {UNIDADES[h.unidad_anterior]} a {h.valor_nuevo} {UNIDADES[h.unidad_nueva]}{h.motivo ? ` — ${h.motivo}` : ''}
+                          {fmtFechaHora(h.creado_en)}: {h.fecha_nueva ? `movida del ${fmtFecha(h.fecha_anterior)} al ${fmtFecha(h.fecha_nueva)}` : `de ${h.valor_anterior} ${UNIDADES[h.unidad_anterior]} a ${h.valor_nuevo} ${UNIDADES[h.unidad_nueva]}`}{h.motivo ? ` — ${h.motivo}` : ''}
                         </div>
                       ))}
                     </div>
@@ -163,6 +164,7 @@ export function EquipoDetalle() {
           )}
         </Tarjeta>
 
+        <HorasUso equipoId={e.id} codigo={e.codigo} tareas={data.tareas} />
         <HistorialEquipo ordenes={data.ordenes} />
       </div>
 

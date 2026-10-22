@@ -1,7 +1,7 @@
 {
   "name": "mantenimiento-rossi",
   "productName": "Mantenimiento Rossi",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Plataforma integrada de mantenimiento - Agrícola Magdalena S.R.L.",
   "author": "Agrícola Magdalena S.R.L.",
   "private": true,
@@ -15,7 +15,7 @@
     "instalador": "electron-vite build && electron-builder --win --publish never",
     "publicar": "electron-vite build && electron-builder --win --publish always",
     "version:tag": "node scripts/tag.mjs",
-    "probar-sql": "node supabase/tests/probar-esquema.mjs supabase/migrations/0001_mantenimiento.sql supabase/migrations/0003_tickets.sql supabase/migrations/0004_plataforma.sql supabase/migrations/0005_ejecucion.sql supabase/migrations/0006_revision_audio.sql supabase/migrations/0007_programar_preventivo.sql"
+    "probar-sql": "node supabase/tests/probar-esquema.mjs supabase/migrations/0001_mantenimiento.sql supabase/migrations/0003_tickets.sql supabase/migrations/0004_plataforma.sql supabase/migrations/0005_ejecucion.sql supabase/migrations/0006_revision_audio.sql supabase/migrations/0007_programar_preventivo.sql supabase/migrations/0008_calendario_horas_parada.sql"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"

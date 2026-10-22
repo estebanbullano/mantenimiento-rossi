@@ -84,6 +84,9 @@ export function TareaCelular() {
 
   const [ocupado, setOcupado] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [noHecha, setNoHecha] = useState(false)
+  const [motivoNR, setMotivoNR] = useState<'maquina_parada' | 'otro'>('maquina_parada')
+  const [detalleNR, setDetalleNR] = useState('')
   const [verProc, setVerProc] = useState(false)
   const [fotoPendiente, setFotoPendiente] = useState<File | null>(null)
   const [notaPaso, setNotaPaso] = useState('')
@@ -184,6 +187,16 @@ export function TareaCelular() {
     setOcupado(null)
     if (error) setErr(mensajeError(error))
     else { avisar(`Tarea cerrada · tiempo real ${horasTxt(Number(m))}.`); void recargar() }
+  }
+
+  async function marcarNoRealizada() {
+    setOcupado('nr'); setErr(null)
+    const { data: prox, error } = await supabase.rpc('mant_ot_no_realizada', { p_orden: id, p_motivo: motivoNR, p_detalle: detalleNR.trim() || null })
+    setOcupado(null)
+    if (error) return setErr(mensajeError(error))
+    setNoHecha(false)
+    avisar(`Quedó asentado que no se hizo${prox ? `. Vuelve a tocar el ${String(prox).split('-').reverse().join('/')}` : ''}.`)
+    void recargar()
   }
 
   const prediccion = useMemo(() => {
@@ -328,7 +341,28 @@ export function TareaCelular() {
             <Boton grande className="w-full" disabled={!fotoFinal || !iniciada} cargando={ocupado === 'fin'} onClick={() => void terminar()}>■ Terminar y cerrar tarea</Boton>
             {!iniciada && <div className="text-center text-xs text-tenue">Primero tocá "Iniciar actividad".</div>}
             {iniciada && !fotoFinal && <div className="text-center text-xs text-tenue">Sin foto final no se cierra.</div>}
-          </> : (
+            {o.tipo === 'preventiva' && (!noHecha ? (
+              <button className="mt-1 self-center rounded-full border border-borde-campo bg-white px-4 py-2.5 text-[13px] font-semibold text-texto-2" onClick={() => setNoHecha(true)}>No se pudo hacer (máquina parada u otro motivo)</button>
+            ) : (
+              <div className="flex flex-col gap-2.5 rounded-[18px] border border-[#f1d49a] bg-[#fff6e5] p-3.5">
+                <span className="text-sm font-semibold">¿Por qué no se hizo?</span>
+                {([['maquina_parada', 'La máquina estuvo parada (sin producción)'], ['otro', 'Otro motivo']] as const).map(([k, t]) => (
+                  <label key={k} className="flex items-center gap-2.5 rounded-[14px] bg-white px-3 py-2.5 text-sm">
+                    <input type="radio" name="motivo-nr" className="h-5 w-5 accent-primario" checked={motivoNR === k} onChange={() => setMotivoNR(k)} />{t}
+                  </label>
+                ))}
+                <textarea className="campo min-h-[70px]" value={detalleNR} onChange={(e) => setDetalleNR(e.target.value)}
+                  placeholder={motivoNR === 'maquina_parada' ? 'Opcional: desde cuándo está parada, por qué (ej.: bajó la producción de legumbres)' : 'Contá por qué no se pudo hacer'} />
+                <span className="text-xs text-suave">Queda en el historial de la máquina y la tarea se reprograma para la próxima vez que le toque según su frecuencia.</span>
+                <div className="flex gap-2">
+                  <Boton className="flex-1" cargando={ocupado === 'nr'} onClick={() => void marcarNoRealizada()}>Confirmar</Boton>
+                  <Boton variante="fantasma" onClick={() => setNoHecha(false)}>Volver</Boton>
+                </div>
+              </div>
+            ))}
+          </> : o.estado === 'no_realizada' ? (
+            <div className="rounded-[18px] border border-[#f1d49a] bg-[#fff6e5] px-4 py-3 text-sm"><b>No realizada{o.no_realizada_motivo === 'maquina_parada' ? ' · máquina parada' : ''}.</b>{o.comentario_cierre ? ` ${o.comentario_cierre}` : ''}</div>
+          ) : (
             <OkBox>Tarea cerrada · tiempo real {o.tiempo_real_min ? horasTxt(o.tiempo_real_min) : '—'}. {o.revision_foto === 'aprobada' ? 'El supervisor la aprobó.' : 'Queda para revisión del supervisor.'}</OkBox>
           )}
         </div>

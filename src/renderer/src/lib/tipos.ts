@@ -154,7 +154,7 @@ export interface ComentarioPedido { id: string; pedido_id: string; autor_id: str
 export interface MaterialPedido { id: string; pedido_id: string; articulo_id: string | null; nombre: string; cantidad: string | null; disponibilidad: Disponibilidad }
 export interface AgendaCelda { pedido_id: string; usuario_id: string; dia: string; fraccion: number; usuario_nombre: string; numero: number; titulo: string; prioridad: Prioridad | null; estado: EstadoPedido }
 
-export type EstadoOT = 'pendiente' | 'en_proceso' | 'completada' | 'cancelada'
+export type EstadoOT = 'pendiente' | 'en_proceso' | 'completada' | 'cancelada' | 'no_realizada'
 
 export interface Orden {
   id: string
@@ -180,6 +180,7 @@ export interface Orden {
   creado_en: string
   observacion?: string | null
   revision_foto?: 'pendiente' | 'aprobada' | 'rehacer' | null
+  no_realizada_motivo?: 'maquina_parada' | 'otro' | null
   revisada_en?: string | null
   equipo_codigo?: string | null
   equipo_clasificacion?: Clasificacion | null

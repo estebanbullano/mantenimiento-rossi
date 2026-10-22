@@ -16,6 +16,7 @@ const horas = (min: number) => min >= 60 ? `${fmtNum(min / 60, 1)} h` : `${Math.
 export function HistorialEquipo({ ordenes }: { ordenes: Orden[] }) {
   const nav = useNavigate()
   const cerradas = ordenes.filter((o) => o.estado === 'completada' && o.completada_en)
+  const noHechas = ordenes.filter((o) => o.estado === 'no_realizada')
   const ids = cerradas.map((o) => o.id)
   const { data } = useDatos(async () => {
     if (!ids.length) return { data: { reps: [] as Rep[], herr: [] as Herr[], fotos: [] as FotoC[] }, error: null }
@@ -68,13 +69,14 @@ export function HistorialEquipo({ ordenes }: { ordenes: Orden[] }) {
   return (
     <Tarjeta className="flex flex-col gap-4 lg:col-span-3">
       <H2 texto="Historial y tendencias de la máquina" />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
         {dato('Intervenciones', String(cerradas.length), `${t.prev} preventivas · ${t.corr} correctivas`)}
         {dato('Fallas (correctivas)', String(t.corr), t.tendencia > 0 ? `↑ ${t.tendencia} más que el trimestre anterior` : t.tendencia < 0 ? `↓ ${-t.tendencia} menos que el trimestre anterior` : 'estable', t.tendencia > 0 ? '#b3141a' : t.tendencia < 0 ? '#1e6b3a' : undefined)}
         {dato('Tiempo entre fallas', t.mtbf != null ? `${fmtNum(t.mtbf)} d` : '—', 'MTBF promedio')}
         {dato('Tiempo de reparación', t.mttr != null ? horas(t.mttr) : '—', 'MTTR promedio')}
         {dato('Horas de mantenimiento', horas(t.total), 'tiempo real acumulado')}
         {dato('Preventivo', cerradas.length ? `${Math.round((t.prev / cerradas.length) * 100)}%` : '—', 'de las intervenciones', '#24508f')}
+        {dato('No realizadas', String(noHechas.length), noHechas.length ? `${noHechas.filter((o) => o.no_realizada_motivo === 'maquina_parada').length} por máquina parada` : 'ninguna', noHechas.length ? '#8a5a00' : undefined)}
       </div>
 
       <div className="flex flex-wrap gap-4">
@@ -125,11 +127,11 @@ export function HistorialEquipo({ ordenes }: { ordenes: Orden[] }) {
                 <span className="flex flex-wrap items-center gap-2 text-xs text-tenue">
                   <span>{fmtFecha(o.completada_en?.slice(0, 10) ?? o.fecha_programada)} · {numOT(o.numero)}</span>
                   <Insignia t={o.tipo === 'preventiva' ? 'azul' : 'amarillo'}>{o.tipo === 'preventiva' ? 'Preventiva' : 'Correctiva'}</Insignia>
-                  <InsEstadoOT e={o.estado} vencida={o.vencida} />
+                  <InsEstadoOT e={o.estado} vencida={o.vencida} motivo={o.no_realizada_motivo} />
                 </span>
                 <span className="text-[15px] font-semibold leading-snug">{o.titulo}</span>
                 <span className="text-[13px] text-suave">{o.asignado_nombre ?? '—'}{o.tiempo_real_min ? ` · ${horas(o.tiempo_real_min)}` : ''}{reps.length ? ` · ${reps.map((r) => `${fmtNum(r.cantidad)} × ${r.texto}`).join(', ')}` : ''}{herr.length ? ` · ${herr.map((h) => h.texto).join(', ')}` : ''}</span>
-                {o.comentario_cierre && <span className="line-clamp-2 text-[13px] italic text-texto-2">“{o.comentario_cierre}”</span>}
+                {o.comentario_cierre && <span className={`line-clamp-2 text-[13px] italic ${o.estado === 'no_realizada' ? 'text-pendiente' : 'text-texto-2'}`}>“{o.comentario_cierre}”</span>}
               </span>
             </button>
           )
