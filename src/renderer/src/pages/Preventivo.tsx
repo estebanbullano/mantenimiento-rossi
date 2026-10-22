@@ -26,12 +26,10 @@ export function Preventivo() {
 
 function PlanSemanal() {
   const nav = useNavigate()
-  const avisar = useAviso()
   const { puede } = useSesion()
   const [lunes, setLunes] = useState(lunesDe(new Date()))
-  const [generando, setGenerando] = useState(false)
 
-  const { data, cargando, error, recargar } = useDatos(async () => {
+  const { data, cargando, error } = useDatos(async () => {
     const [ot, tareas] = await Promise.all([
       supabase.from('mant_v_ordenes').select('*').eq('tipo', 'preventiva').eq('semana', lunes).order('prioridad'),
       supabase.from('mant_tareas').select('*, equipo:mant_equipos(codigo, nombre, planta_id)').eq('activa', true)
@@ -43,27 +41,19 @@ function PlanSemanal() {
   const conOT = new Set((data?.ordenes ?? []).map((o) => o.tarea_id))
   const faltan = (data?.tareas ?? []).filter((t) => !conOT.has(t.id))
 
-  async function generar() {
-    setGenerando(true)
-    const { data: n, error } = await supabase.rpc('mant_generar_semana', { p_lunes: lunes })
-    setGenerando(false)
-    if (error) avisar(mensajeError(error), 'error')
-    else { avisar(n ? `Se generaron ${n} órdenes preventivas.` : 'No había tareas nuevas para generar.'); void recargar() }
-  }
-
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Boton variante="secundario" onClick={() => setLunes(sumarDias(lunes, -7))}>‹</Boton>
         <div className="rounded-lg border border-borde bg-white px-4 py-2 text-sm font-bold">S{semanaISO(lunes)} · {fmtFecha(lunes)} al {fmtFecha(sumarDias(lunes, 6))}</div>
         <Boton variante="secundario" onClick={() => setLunes(sumarDias(lunes, 7))}>›</Boton>
-        {puede('referente', 'supervisor') && <Boton className="ml-auto" cargando={generando} onClick={() => void generar()}>Generar órdenes de la semana{faltan.length ? ` (${faltan.length})` : ''}</Boton>}
+        {puede('referente', 'supervisor') && <Boton className="ml-auto" onClick={() => nav('/ordenes?programar=1')}>Programar y asignar{faltan.length ? ` (${faltan.length} sin OT)` : ''}</Boton>}
       </div>
       <ErrorBox texto={error} />
       {cargando ? <Cargando /> : !data ? null : (
         <div className="grid gap-4 lg:grid-cols-3">
           <Tarjeta titulo={`Órdenes de la semana (${data!.ordenes.length})`} className="lg:col-span-2">
-            {!data!.ordenes.length ? <Vacio texto="Todavía no se generaron órdenes para esta semana." /> : (
+            {!data!.ordenes.length ? <Vacio texto="Todavía no hay órdenes para esta semana: programalas desde Órdenes → Programar preventivo." /> : (
               <table className="tabla -m-4 w-[calc(100%+2rem)]">
                 <thead><tr><th>OT</th><th>Equipo</th><th>Tarea</th><th>Asignado</th><th>Estado</th></tr></thead>
                 <tbody>

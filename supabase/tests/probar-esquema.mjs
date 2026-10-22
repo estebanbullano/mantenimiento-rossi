@@ -289,5 +289,51 @@ const apr2 = (await as(U.ref, `select mant_aprender_de_ot($1, $2::jsonb) r`, [ox
 const pasos2 = (await as(U.op2, `select orden, texto, foto_ruta from mant_tarea_pasos where tarea_id=$1 order by orden`, [tar])).rows
 check(apr2.pasos === 3 && pasos2.length === 3 && pasos2[0].texto === 'Cortar energía y bloquear' && pasos2[1].foto_ruta === 'p1.jpg' && pasos2[2].orden === 3, 'los pasos que escribe el administrador quedan como procedimiento (los vacíos se ignoran)')
 
+console.log('Programar el preventivo (0007)')
+const tv = (await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha, duracion_estimada_horas) values ($1,'Limpieza de quemadores',2,'semanas',current_date - 10, 2) returning id`, [eq])).rows[0].id
+await as(U.ref, `insert into mant_tarea_items (tarea_id, orden, descripcion) values ($1,1,'Sacar quemadores'),($1,2,'Limpiar picos')`, [tv])
+const tf = (await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha) values ($1,'Revisión anual',1,'meses',current_date + 90) returning id`, [eq])).rows[0].id
+const pp = (await as(U.ref, `select * from mant_v_preventivo_programar where tarea_id=$1`, [tv])).rows[0]
+check(pp && pp.dias_atraso === 10 && pp.prioridad_sugerida === 'urgente' && pp.orden_id === null, 'una tarea de equipo crítico atrasada 10 días aparece como urgente y sin OT')
+check(!(await as(U.ref, `select 1 from mant_v_preventivo_programar where tarea_id=$1`, [tf])).rows.length, 'lo que vence en más de 60 días no aparece')
+check(!!(await fails(U.op, `select mant_generar_ots(array[$1::uuid], $2::uuid, current_date)`, [tv, U.op])), 'un operario no genera OT')
+const manana = (await as(null, `select (current_date + 1)::text d`)).rows[0].d
+const gr = (await as(U.ref, `select mant_generar_ots(array[$1::uuid], $2::uuid, $3::date, 'Mañana', null, 'Llevar cepillo de bronce') r`, [tv, U.op, manana])).rows[0].r
+const og = (await as(U.ref, `select * from mant_ordenes where tarea_id=$1 and estado='pendiente'`, [tv])).rows[0]
+check(gr.nuevas === 1 && og.asignado_id === U.op && og.prioridad === 'urgente' && og.turno === 'Mañana' && og.observacion === 'Llevar cepillo de bronce', 'genera la OT asignada al operario, con día, turno, observación y la prioridad sugerida')
+check((await as(U.ref, `select count(*)::int n from mant_ot_items where orden_id=$1`, [og.id])).rows[0].n === 2, 'la OT trae los puntos de control de la tarea')
+check((await as(U.op, `select count(*)::int n from mant_ordenes where id=$1`, [og.id])).rows[0].n === 1, 'el operario ve la OT que le asignaron')
+const gr2 = (await as(U.ref, `select mant_generar_ots(array[$1::uuid], $2::uuid, current_date) r`, [tv, U.op2])).rows[0].r
+check(gr2.nuevas === 0 && gr2.reasignadas === 1 && (await as(U.ref, `select count(*)::int n from mant_ordenes where tarea_id=$1 and estado='pendiente'`, [tv])).rows[0].n === 1, 'si ya tiene OT pendiente no se duplica: se reasigna')
+check((await as(U.ref, `select asignado_id from mant_ordenes where id=$1`, [og.id])).rows[0].asignado_id === U.op2, 'la OT pasó al otro operario')
+await as(U.ref, `select mant_generar_ots(array[$1::uuid], $2::uuid, current_date)`, [tv, U.op])
+const pp2 = (await as(U.ref, `select * from mant_v_preventivo_programar where tarea_id=$1`, [tv])).rows[0]
+check(pp2.orden_id === og.id && pp2.asignado_id === U.op, 'la vista muestra la OT abierta y a quién está asignada')
+check(!!(await fails(U.ref, `select mant_generar_ots(array[$1::uuid], null, current_date, null, 'altisima')`, [tv])), 'rechaza una prioridad inválida')
+
+// repartir fechas amontonadas
+const fm = (await as(null, `select (current_date + 9)::text d`)).rows[0].d
+const eqs2 = []
+for (let k = 0; k < 6; k++) eqs2.push((await as(U.ref, `insert into mant_equipos (codigo,nombre,planta_id,io,fo,isa) values ($1,$2,$3,$4,1,0) returning id`, [`EQ-R${k}`, `Equipo ${k}`, pl, 6 - k])).rows[0].id)
+const anuales = [], mensuales = []
+for (const e of eqs2) {
+  anuales.push((await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha) values ($1,'Anual',12,'meses',$2) returning id`, [e, fm])).rows[0].id)
+  mensuales.push((await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha) values ($1,'Mensual',1,'meses',$2) returning id`, [e, fm])).rows[0].id)
+}
+await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha) values ($1,'Anual 2',12,'meses',$2)`, [eqs2[5], fm])
+await as(U.ref, `select mant_generar_semana($1::date)`, [fm])
+const pendAntes = (await as(U.ref, `select count(*)::int n from mant_ordenes where tarea_id = any($1::uuid[]) and estado='pendiente'`, [[...anuales, ...mensuales]])).rows[0].n
+check(!!(await fails(U.op, `select mant_repartir_fechas($1::date)`, [fm])), 'un operario no reparte fechas')
+const rp = (await as(U.ref, `select mant_repartir_fechas($1::date) r`, [fm])).rows[0].r
+const fa = (await as(U.ref, `select t.proxima_fecha::text f, e.codigo from mant_tareas t join mant_equipos e on e.id=t.equipo_id where t.id = any($1::uuid[]) order by e.codigo`, [anuales])).rows
+const fmn = (await as(U.ref, `select t.proxima_fecha::text f from mant_tareas t join mant_equipos e on e.id=t.equipo_id where t.id = any($1::uuid[]) order by e.codigo`, [mensuales])).rows.map((r) => r.f)
+const a2 = (await as(U.ref, `select proxima_fecha::text f from mant_tareas where descripcion='Anual 2'`)).rows[0].f
+check(rp.tareas === 13 && new Set(fa.map((r) => r.f)).size === 6, `las anuales quedan una máquina por semana (${rp.tareas} tareas reprogramadas)`)
+check(fa[0].f === rp.desde && fa[0].codigo === 'EQ-R0', 'empieza por el equipo más crítico')
+check(a2 === fa[5].f, 'las tareas del mismo equipo y frecuencia caen la misma semana')
+check(new Set(fmn).size === 4 && fmn[4] === fmn[0], 'las mensuales se reparten en las 4 semanas del mes')
+check(pendAntes === 12 && rp.ots_movidas + rp.ots_canceladas === 13 && rp.ots_canceladas > 0, `las OT sin asignar se mueven (${rp.ots_movidas}) o se cancelan (${rp.ots_canceladas})`)
+check((await as(U.ref, `select count(*)::int n from mant_ordenes where tarea_id = any($1::uuid[]) and estado='pendiente' and fecha_programada <> (select proxima_fecha from mant_tareas where id = tarea_id)`, [[...anuales, ...mensuales]])).rows[0].n === 0, 'las OT que quedan pendientes tienen la nueva fecha')
+
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)

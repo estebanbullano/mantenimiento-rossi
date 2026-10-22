@@ -87,7 +87,10 @@ export function Inicio() {
       </div>
       <div className="flex flex-wrap gap-4">
         <Tarjeta className="flex min-w-0 flex-[3_1_460px] flex-col gap-3">
-          <H2 texto="Equipos críticos con tareas próximas" />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <H2 texto="Equipos críticos con tareas próximas" />
+            {verMant && <button className="text-[13px] font-semibold text-primario hover:underline" onClick={() => nav('/ordenes?programar=1')}>Programar y asignar preventivos →</button>}
+          </div>
           {data.tareas.length === 0 && <span className="text-sm text-suave">No hay tareas preventivas de equipos críticos.</span>}
           {data.tareas.map((t) => {
             const ot = data.abiertas.find((o) => o.tarea_id === t.id)
@@ -95,7 +98,7 @@ export function Inicio() {
               <button key={t.id} onClick={() => nav(`/equipos/${t.equipo_id}`)} className="flex flex-wrap items-center gap-3 rounded-[14px] bg-crema px-3.5 py-3 text-left text-texto">
                 <Insignia t="rojo">C</Insignia>
                 <span className="flex flex-[1_1_200px] flex-col gap-0.5"><span className="text-[15px] font-semibold">{t.descripcion}</span><span className="text-[13px] text-suave">{t.equipo.codigo} · {t.equipo.nombre}</span></span>
-                <span className="text-sm font-medium">{cuando(ot?.fecha_programada ?? t.proxima_fecha)}{ot?.asignado_nombre ? ` · ${ot.asignado_nombre}` : ''}</span>
+                <span className="text-sm font-medium">{cuando(ot?.fecha_programada ?? t.proxima_fecha)}{ot ? ` · ${ot.asignado_nombre ?? 'sin asignar'}` : ''}</span>
                 {ot ? <InsEstadoOT e={ot.estado} /> : <Insignia>Programada</Insignia>}
               </button>
             )

@@ -7,8 +7,9 @@ import { deISO, fmtFecha, fmtMin, fmtNum, hoy, lunesDe, numOT, semanaISO, sumarD
 import { PRIORIDADES, type Orden, type Prioridad, type Usuario } from '@/lib/tipos'
 import { Boton, Campo, Cargando, Chip, CRIT, ErrorBox, H2, Insignia, InsEstadoOT, Modal, Pagina, Pestanas, Tarjeta, Vacio, useAviso } from '@/components/ui'
 import { Foto, SelectorEquipo } from '@/components/selectores'
+import { Programar } from './Programar'
 
-type Vista = 'agenda' | 'supervisor' | 'lista'
+type Vista = 'programar' | 'agenda' | 'supervisor' | 'lista'
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
 const dTxt = (x: number) => `${fmtNum(Math.round(x * 100) / 100, 2).replace(/,?0+$/, '')} d`
 const dias = (o: Orden) => (o.duracion_estimada_horas ?? 8) / 8
@@ -19,12 +20,10 @@ interface Datos { ots: Orden[]; operarios: Usuario[] }
 export function Ordenes() {
   const [params] = useSearchParams()
   const { puede } = useSesion()
-  const avisar = useAviso()
   const esMant = puede('referente', 'supervisor')
-  const [vista, setVista] = useState<Vista>(params.get('vencidas') ? 'lista' : 'agenda')
+  const [vista, setVista] = useState<Vista>(params.get('vencidas') ? 'lista' : params.get('programar') ? 'programar' : 'agenda')
   const [lunes, setLunes] = useState(lunesDe(new Date()))
   const [nueva, setNueva] = useState(false)
-  const [generando, setGenerando] = useState(false)
   const viernes = sumarDias(lunes, 4)
 
   const { data, cargando, error, recargar } = useDatos(async () => {
@@ -35,31 +34,23 @@ export function Ordenes() {
     return { data: { ots: (o.data ?? []) as Orden[], operarios: (u.data ?? []) as Usuario[] } as Datos, error: o.error || u.error }
   }, [lunes])
 
-  async function generar() {
-    setGenerando(true)
-    const { data: n, error } = await supabase.rpc('mant_generar_semana', { p_lunes: lunes })
-    setGenerando(false)
-    if (error) avisar(mensajeError(error), 'error')
-    else { avisar(`${n ?? 0} órdenes preventivas generadas para la semana.`); void recargar() }
-  }
-
   const ini = deISO(lunes), fin = deISO(viernes)
   const rango = ini.getMonth() === fin.getMonth() ? `${ini.getDate()} al ${fin.getDate()} de ${MESES[fin.getMonth()]}` : `${ini.getDate()}/${ini.getMonth() + 1} al ${fin.getDate()}/${fin.getMonth() + 1}`
 
   return (
     <Pagina kicker={`Módulo 1 y 2 · Semana ${semanaISO(lunes)} · ${rango}`} titulo="Órdenes de trabajo"
       acciones={<>
-        <div className="flex items-center gap-1 rounded-full border border-borde bg-white p-1">
+        {vista !== 'programar' && <div className="flex items-center gap-1 rounded-full border border-borde bg-white p-1">
           <button className="h-9 w-9 rounded-full hover:bg-crema" onClick={() => setLunes(sumarDias(lunes, -7))} aria-label="Semana anterior">‹</button>
           <button className="rounded-full px-3 py-1.5 text-sm hover:bg-crema" onClick={() => setLunes(lunesDe(new Date()))}>Esta semana</button>
           <button className="h-9 w-9 rounded-full hover:bg-crema" onClick={() => setLunes(sumarDias(lunes, 7))} aria-label="Semana siguiente">›</button>
-        </div>
-        <Pestanas valor={vista} onCambio={setVista} opciones={[['agenda', 'Agenda por operario'], ['supervisor', 'Panel del supervisor'], ['lista', 'Listado']]} />
+        </div>}
+        <Pestanas valor={vista} onCambio={setVista} opciones={[...(esMant ? [['programar', 'Programar preventivo'] as [Vista, string]] : []), ['agenda', 'Agenda por operario'], ['supervisor', 'Panel del supervisor'], ['lista', 'Listado']]} />
       </>}>
       <ErrorBox texto={error} />
-      {cargando && !data ? <Cargando /> : !data ? null : vista === 'agenda'
+      {vista === 'programar' ? <Programar onCambio={() => void recargar()} /> : cargando && !data ? <Cargando /> : !data ? null : vista === 'agenda'
         ? <Agenda d={data} lunes={lunes} esMant={esMant} onCambio={() => void recargar()}
-            acciones={esMant && <div className="flex flex-wrap gap-2"><Boton chico variante="secundario" cargando={generando} onClick={() => void generar()}>Generar desde el preventivo</Boton><Boton chico onClick={() => setNueva(true)}>+ Nueva OT</Boton></div>} />
+            acciones={esMant && <div className="flex flex-wrap gap-2"><Boton chico variante="secundario" onClick={() => setVista('programar')}>Programar preventivo</Boton><Boton chico onClick={() => setNueva(true)}>+ Nueva OT</Boton></div>} />
         : vista === 'supervisor' ? <PanelSupervisor d={data} esMant={esMant} onCambio={() => void recargar()} />
         : <Listado ots={data.ots} soloVencidas={!!params.get('vencidas')} />}
       {nueva && <NuevaOT lunes={lunes} onCerrar={() => setNueva(false)} onListo={() => { setNueva(false); void recargar() }} />}
@@ -106,7 +97,7 @@ function Agenda({ d, lunes, esMant, onCambio, acciones }: { d: Datos; lunes: str
       <div className="flex flex-wrap gap-4">
         <div className="flex flex-[2_1_380px] flex-col gap-2.5 rounded-2xl border border-borde bg-white px-4 py-3.5 text-sm">
           {esMant && <span className="rounded-xl bg-rojo-suave px-3 py-2 text-[13px] text-[#8e0f14]"><b>Arrastrá y soltá</b> una OT pendiente en otra celda, o usá los selectores de cada tarjeta, para cambiar quién la hace o qué día.</span>}
-          <span><b>La semana se genera sola desde el preventivo.</b> <span className="text-suave">{prev.length} preventivas desde el plan + {corr.length} correctivas desde pedidos · {d.ots.length} OT en total</span></span>
+          <span><b>Las preventivas se programan en "Programar preventivo".</b> <span className="text-suave">{prev.length} preventivas desde el plan + {corr.length} correctivas desde pedidos · {d.ots.length} OT en total</span></span>
           <div className="flex flex-wrap items-center gap-1.5"><span className="mr-1 text-[13px] text-suave">Ver operario</span>
             {['Todos', ...filas.map((f) => f.nombre)].map((n) => <Chip key={n} activo={filtro === n} onClick={() => setFiltro(n)}>{n}</Chip>)}
           </div>
