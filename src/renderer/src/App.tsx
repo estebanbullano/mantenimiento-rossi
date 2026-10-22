@@ -6,12 +6,12 @@ import { Cargando, ProveedorAvisos, Vacio } from '@/components/ui'
 import { Layout } from '@/components/Layout'
 import { Acceso, CuentaPendiente, NuevaClave } from '@/pages/Acceso'
 import { Inicio } from '@/pages/Inicio'
-import { NuevoPedido } from '@/pages/NuevoPedido'
+import { NuevoPedido } from '@/pages/Solicitante'
 import { Pedidos } from '@/pages/Pedidos'
-import { MisTareas } from '@/pages/MisTareas'
+import { MisTareas, TareaCelular } from '@/pages/Operario'
+import { esRolCelular } from '@/components/Layout'
 import { OrdenDetalle } from '@/pages/OrdenDetalle'
 import { Ordenes } from '@/pages/Ordenes'
-import { Agenda } from '@/pages/Agenda'
 import { Preventivo } from '@/pages/Preventivo'
 import { Equipos } from '@/pages/Equipos'
 import { EquipoDetalle } from '@/pages/EquipoDetalle'
@@ -48,13 +48,13 @@ function Rutas() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Inicio />} />
+        <Route index element={usuario.rol === 'operario' ? <MisTareas /> : usuario.rol === 'solicitante' ? <NuevoPedido /> : <Inicio />} />
         <Route path="pedido/nuevo" element={<NuevoPedido />} />
         <Route path="pedidos" element={<Pedidos />} />
         <Route path="tareas" element={<Solo roles={['operario', ...MANT]}><MisTareas /></Solo>} />
         <Route path="ordenes" element={<Solo roles={STAFF}><Ordenes /></Solo>} />
-        <Route path="ordenes/:id" element={<OrdenDetalle />} />
-        <Route path="agenda" element={<Agenda />} />
+        <Route path="ordenes/:id" element={esRolCelular(usuario.rol) ? <TareaCelular /> : <OrdenDetalle />} />
+        <Route path="agenda" element={<Navigate to="/ordenes" replace />} />
         <Route path="preventivo" element={<Solo roles={STAFF}><Preventivo /></Solo>} />
         <Route path="equipos" element={<Solo roles={[...STAFF, 'panolero']}><Equipos /></Solo>} />
         <Route path="equipos/qr" element={<Solo roles={MANT}><EtiquetasQR /></Solo>} />

@@ -57,7 +57,7 @@ export function EquipoDetalle() {
   const mttr = correctivas.length ? Math.round(correctivas.reduce((s, o) => s + (o.tiempo_real_min ?? 0), 0) / correctivas.length) : null
 
   return (
-    <Pagina titulo={e.codigo} subtitulo={<span className="flex flex-wrap items-center gap-2">{e.nombre} · {e.planta_nombre}{e.sector_nombre ? ` / ${e.sector_nombre}` : ''} <InsCriticidad c={e.clasificacion} valor={e.criticidad} /></span>}
+    <Pagina kicker={`${e.planta_nombre}${e.sector_nombre ? ` · ${e.sector_nombre}` : ''}`} titulo={e.codigo} subtitulo={<span className="flex flex-wrap items-center gap-2.5 text-[17px]">{e.nombre} <InsCriticidad c={e.clasificacion} /></span>}
       acciones={<>
         <Boton variante="fantasma" onClick={() => nav('/equipos')}>← Equipos</Boton>
         <Boton variante="secundario" onClick={() => nav(`/pedido/nuevo?equipo=${encodeURIComponent(e.codigo)}`)}>Pedir reparación</Boton>
@@ -75,9 +75,20 @@ export function EquipoDetalle() {
             <div><dt className="etiqueta">Frecuencia de fallas</dt><dd>{e.frecuencia_fallas ? ({4:'4 · Pobre',3:'3 · Promedio',2:'2 · Buena',1:'1 · Excelente'} as Record<number,string>)[e.frecuencia_fallas] : '—'}</dd></div>
           </dl>
           {e.descripcion && <p className="mt-3 whitespace-pre-wrap text-sm">{e.descripcion}</p>}
-          <div className="mt-4 rounded-lg bg-fondo-2 p-3 text-sm">
-            <div className="etiqueta">Criticidad</div>
-            C = ({e.io} × {e.fo}) + {e.cm} + {e.isa} = <b>{e.criticidad}</b>
+          <div className="mt-4 flex flex-col gap-2.5">
+            <h3 className="m-0 text-base font-semibold">Cálculo de criticidad</h3>
+            <div className="rounded-[14px] bg-fondo px-3.5 py-3 text-[15px] font-medium">C = (IO × FO) + CM + ISA</div>
+            {([['IO', 'Impacto operativo', e.io], ['FO', 'Frecuencia de falla', e.fo], ['CM', 'Costo de mantenimiento', e.cm], ['ISA', 'Seguridad y ambiente', e.isa]] as const).map(([k, d, v]) => (
+              <div key={k} className="flex items-center justify-between gap-2.5 border-b border-linea-2 pb-2 text-sm">
+                <span className="flex flex-col"><span className="font-semibold">{k}</span><span className="text-[13px] text-suave">{d}</span></span>
+                <span className="text-xl font-semibold">{v ?? '—'}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between text-[15px]">
+              <span>({e.io} × {e.fo}) + {e.cm} + {e.isa} =</span>
+              <span className="text-[30px] font-bold" style={{ color: e.clasificacion === 'C' ? '#b3141a' : e.clasificacion === 'MC' ? '#8a5a00' : '#1e6b3a' }}>{e.criticidad}</span>
+            </div>
+            <span className="text-xs text-tenue">Los puntajes y cortes se editan en Configuración.</span>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-lg border border-borde p-2"><div className="etiqueta">Correctivos</div><b className="text-lg">{correctivas.length}</b></div>

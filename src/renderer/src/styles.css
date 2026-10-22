@@ -1,36 +1,63 @@
 @import 'tailwindcss';
-@import '@fontsource/nunito/400.css';
-@import '@fontsource/nunito/600.css';
-@import '@fontsource/nunito/700.css';
-@import '@fontsource/nunito/800.css';
+@import '@fontsource/outfit/300.css';
+@import '@fontsource/outfit/400.css';
+@import '@fontsource/outfit/500.css';
+@import '@fontsource/outfit/600.css';
+@import '@fontsource/outfit/700.css';
 
-/* Misma paleta que Compras Rossi */
+/* Paleta de la plataforma Famiglia Rossi (demo "Plataforma de mantenimiento") */
 @theme {
-  --font-sans: 'Nunito', system-ui, sans-serif;
-  --color-primario: #e20018;
-  --color-primario-oscuro: #b30013;
-  --color-texto: #222;
-  --color-suave: #6b6b6b;
-  --color-borde: #e2e2e2;
-  --color-fondo-2: #f5f5f5;
-  --color-aprobado: #2e7d32;
-  --color-pendiente: #f9a825;
-  --color-revision: #1565c0;
-  --color-rechazado: #8e0000;
+  --font-sans: 'Outfit', 'Avenir Next', system-ui, sans-serif;
+  --color-primario: #cc1a20;
+  --color-primario-oscuro: #b3141a;
+  --color-acento: #e31e24;
+  --color-rojo-claro: #fde8e8;
+  --color-rojo-suave: #fdf3f3;
+  --color-texto: #1f1b16;
+  --color-texto-2: #3a332b;
+  --color-suave: #5c5348;
+  --color-tenue: #6b6157;
+  --color-borde: #e8e1d6;
+  --color-borde-campo: #ddd4c7;
+  --color-linea: #efe9df;
+  --color-linea-2: #f3eee6;
+  --color-fondo: #f5f1ea;
+  --color-fondo-2: #f5f1ea;
+  --color-crema: #f9f6f1;
+  --color-beige: #f0eae0;
+  --color-aprobado: #1e6b3a;
+  --color-verde-claro: #e6f4ea;
+  --color-pendiente: #8a5a00;
+  --color-ambar-claro: #fdf1dc;
+  --color-ambar: #d9a21b;
+  --color-revision: #24508f;
+  --color-azul-claro: #e7eef9;
+  --color-azul: #5b84c4;
+  --color-rechazado: #b3141a;
+  --radius-tarjeta: 20px;
 }
 
 html, body, #root { height: 100%; }
 @layer base {
-  body { @apply bg-fondo-2 text-texto antialiased; -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-fondo font-sans text-texto antialiased; -webkit-tap-highlight-color: transparent; }
+  button { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  input, select, textarea { font-family: inherit; }
 }
 
 @layer components {
-  .campo { @apply w-full rounded-lg border border-borde bg-white px-3 py-2 text-sm outline-none focus:border-primario focus:ring-2 focus:ring-primario/15 disabled:bg-fondo-2; }
-  .etiqueta { @apply mb-1 block text-xs font-bold uppercase tracking-wide text-suave; }
+  .campo { @apply min-h-[46px] w-full rounded-[14px] border border-borde-campo bg-white px-3.5 py-2.5 text-[15px] text-texto outline-none placeholder:text-tenue/70 focus:border-primario focus:ring-2 focus:ring-primario/15 disabled:bg-crema disabled:text-suave; }
+  .campo-chico { @apply min-h-[36px] rounded-full border border-borde-campo bg-white px-3 py-1 text-[13px] text-texto outline-none focus:border-primario; }
+  .etiqueta { @apply mb-1.5 block text-[13px] font-semibold text-texto; }
+  .etiqueta-suave { @apply mb-1.5 block text-[13px] font-medium text-suave; }
+  .kicker { @apply text-[13px] text-tenue; }
+  .sobretitulo { @apply text-xs font-semibold uppercase tracking-[0.08em] text-tenue; }
+  .tarjeta { @apply rounded-tarjeta border border-borde bg-white; }
   .tabla { @apply w-full border-collapse text-sm; }
-  .tabla th { @apply border-b border-borde bg-fondo-2 px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-suave; }
-  .tabla td { @apply border-b border-borde px-3 py-2 align-top; }
-  .tabla tbody tr:hover { @apply bg-fondo-2/60; }
+  .tabla th { @apply border-b border-linea px-4 py-3.5 text-left text-xs font-semibold uppercase tracking-[0.05em] text-tenue; }
+  .tabla td { @apply border-b border-linea-2 px-4 py-3 align-middle; }
+  .tabla tbody tr:hover { @apply bg-crema; }
+  .rayado { background: repeating-linear-gradient(135deg, #efe9df 0 12px, #e6ded1 12px 24px); }
 }
 
 @media print {

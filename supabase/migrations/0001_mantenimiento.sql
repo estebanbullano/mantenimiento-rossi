@@ -761,7 +761,8 @@ end $$;
 -- ---------------------------------------------------------------------
 -- 11. Vistas para la app y los reportes
 -- ---------------------------------------------------------------------
-create or replace view mant_v_ordenes with (security_invoker = true) as
+drop view if exists mant_v_ordenes;
+create view mant_v_ordenes with (security_invoker = true) as
 select o.*,
        e.codigo as equipo_codigo, e.nombre as equipo_nombre, e.planta_id,
        t.unidad as tarea_unidad,

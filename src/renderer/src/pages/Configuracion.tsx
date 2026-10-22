@@ -1,16 +1,31 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { mensajeError, supabase } from '@/lib/supabase'
-import type { Config } from '@/lib/tipos'
-import { Boton, Campo, Cargando, ErrorBox, Pagina, Tarjeta, useAviso } from '@/components/ui'
-import { useConfig } from './Equipos'
+import { useDatos } from '@/lib/util'
+import type { Config, Equipo } from '@/lib/tipos'
+import { Boton, Cargando, ErrorBox, Pagina, useAviso } from '@/components/ui'
+import { calcularCriticidad, useConfig } from './Equipos'
 
 /** Matriz de criticidad configurable: al cambiar un valor, la criticidad de todos los equipos se recalcula sola */
 export function Configuracion() {
   const avisar = useAviso()
+  const nav = useNavigate()
   const { data, cargando, error, recargar } = useConfig()
+  const { data: equipos } = useDatos(async () => {
+    const r = await supabase.from('mant_v_equipos').select('id,io,fo,isa,cm_manual,costo_falla_usd,clasificacion_manual').eq('activo', true)
+    return { data: (r.data ?? []) as Equipo[], error: r.error }
+  })
   const [f, setF] = useState<Config | null>(null)
   const [guardando, setGuardando] = useState(false)
   useEffect(() => setF(data), [data])
+
+  // Vista previa: cómo quedan los equipos con los valores que se están editando
+  const conteo = useMemo(() => {
+    const c = { C: 0, MC: 0, NC: 0 }
+    if (!f) return c
+    for (const e of equipos ?? []) { const r = calcularCriticidad(e, f); const cl = e.clasificacion_manual ?? r?.clasificacion; if (cl) c[cl]++ }
+    return c
+  }, [equipos, f])
 
   async function guardar() {
     if (!f) return
@@ -24,22 +39,44 @@ export function Configuracion() {
   }
 
   if (cargando || !f) return <Cargando />
-  const n = (k: keyof Config) => (e: React.ChangeEvent<HTMLInputElement>) => setF({ ...f, [k]: Number(e.target.value) })
+  const fila = (t: string, k: keyof Config) => (
+    <label className="flex items-center justify-between gap-3 text-sm">
+      <span>{t}</span>
+      <input className="campo w-[90px] text-center" type="number" value={f[k] as number} onChange={(e) => setF({ ...f, [k]: Number(e.target.value) })} />
+    </label>
+  )
+  const tarjeta = (titulo: string, sub: string, hijos: React.ReactNode) => (
+    <section className="tarjeta flex flex-[1_1_240px] flex-col gap-3.5 p-5">
+      <div><h2 className="m-0 text-lg font-semibold">{titulo}</h2><p className="m-0 mt-1 text-[13px] text-suave">{sub}</p></div>
+      {hijos}
+    </section>
+  )
   return (
-    <Pagina titulo="Configuración" subtitulo="Matriz de criticidad (RG MA 03).">
+    <Pagina kicker="Módulo 1 · Planificación" titulo="Matriz de criticidad">
       <ErrorBox texto={error} />
-      <Tarjeta titulo="C = (IO × FO) + CM + ISA" className="max-w-2xl">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Campo etiqueta="Corte de costo (USD)" ayuda="Si el costo de falla lo supera, el CM toma el puntaje alto."><input className="campo" type="number" value={f.corte_costo_usd} onChange={n('corte_costo_usd')} /></Campo>
-          <div />
-          <Campo etiqueta="CM si supera el corte"><input className="campo" type="number" value={f.cm_supera_corte} onChange={n('cm_supera_corte')} /></Campo>
-          <Campo etiqueta="CM si no supera el corte"><input className="campo" type="number" value={f.cm_no_supera_corte} onChange={n('cm_no_supera_corte')} /></Campo>
-          <Campo etiqueta="Desde este valor: MC (medio)"><input className="campo" type="number" value={f.umbral_mc} onChange={n('umbral_mc')} /></Campo>
-          <Campo etiqueta="Desde este valor: C (crítico)"><input className="campo" type="number" value={f.umbral_c} onChange={n('umbral_c')} /></Campo>
-        </div>
-        <p className="mt-4 text-xs text-suave">Por debajo del umbral MC el equipo es NC. Los críticos se programan primero en el plan semanal (prioridad alta), los MC con prioridad media y los NC con baja.</p>
-        <div className="mt-4"><Boton cargando={guardando} onClick={() => void guardar()}>Guardar</Boton></div>
-      </Tarjeta>
+      <div className="rounded-2xl bg-rojo-claro px-4 py-3 text-sm font-medium text-primario-oscuro">
+        La criticidad se recalcula sola: cambiá un valor y mirá cómo se mueven los equipos. Con estos valores: {conteo.C} críticos · {conteo.MC} de media · {conteo.NC} no críticos.
+      </div>
+      <div className="flex flex-wrap items-stretch gap-4">
+        {tarjeta('C = (IO × FO) + CM + ISA', 'Fórmula de la matriz RG MA 03', <>
+          <p className="m-0 text-sm leading-relaxed text-texto-2"><b>IO</b> impacto operativo, <b>FO</b> frecuencia de falla e <b>ISA</b> seguridad y ambiente se puntúan en la ficha de cada equipo con la escala de la planilla.</p>
+          <p className="m-0 text-sm leading-relaxed text-texto-2">Acá se define el costo de mantenimiento y desde qué puntaje un equipo es crítico.</p>
+        </>)}
+        {tarjeta('CM · Costo de mantenimiento', 'Puntaje según el corte de costo', <>
+          {fila('Corte de costo (USD)', 'corte_costo_usd')}
+          {fila('Por encima del corte', 'cm_supera_corte')}
+          {fila('Por debajo del corte', 'cm_no_supera_corte')}
+        </>)}
+        {tarjeta('Clasificación', 'Puntaje desde el que cambia la criticidad', <>
+          {fila('MC · Media desde', 'umbral_mc')}
+          {fila('C · Crítico desde', 'umbral_c')}
+          <span className="text-xs text-tenue">Por debajo de MC el equipo es NC. Los críticos se programan primero (prioridad alta), los MC con media y los NC con baja.</span>
+        </>)}
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Boton cargando={guardando} onClick={() => void guardar()}>Guardar cambios</Boton>
+        <Boton variante="secundario" onClick={() => nav('/equipos')}>Ver equipos recalculados →</Boton>
+      </div>
     </Pagina>
   )
 }

@@ -5,7 +5,7 @@ import { useSesion } from '@/lib/sesion'
 import { usePlantas } from '@/lib/catalogos'
 import { aCodigo, fmtNum, useDatos } from '@/lib/util'
 import type { Config, Equipo, Planta, Sector } from '@/lib/tipos'
-import { Boton, Campo, Cargando, ErrorBox, InsCriticidad, Modal, Pagina, Tarjeta, Vacio, useAviso } from '@/components/ui'
+import { Boton, Campo, Cargando, Chip, ErrorBox, InsCriticidad, Modal, Pagina, Vacio, useAviso } from '@/components/ui'
 
 export function useConfig() {
   return useDatos(async () => {
@@ -39,53 +39,66 @@ export function Equipos() {
     return { data: (r.data ?? []) as Equipo[], error: r.error }
   })
 
+  const [orden, setOrden] = useState<'desc' | 'asc'>('desc')
   const lista = useMemo(() => {
     const t = texto.toLowerCase()
-    return (data ?? []).filter((e) => (!planta || e.planta_id === planta) && (!sector || e.sector_id === sector) &&
+    const l = (data ?? []).filter((e) => (!planta || e.planta_id === planta) && (!sector || e.sector_id === sector) &&
       (!clas || e.clasificacion === clas) && (!t || `${e.codigo} ${e.nombre}`.toLowerCase().includes(t)))
-  }, [data, planta, sector, clas, texto])
+    return l.slice().sort((a, b) => ((b.criticidad ?? 0) - (a.criticidad ?? 0)) * (orden === 'desc' ? 1 : -1) || a.codigo.localeCompare(b.codigo))
+  }, [data, planta, sector, clas, texto, orden])
   const resumen = { C: lista.filter((e) => e.clasificacion === 'C').length, MC: lista.filter((e) => e.clasificacion === 'MC').length, NC: lista.filter((e) => e.clasificacion === 'NC').length }
+  const plSel = pl?.plantas.find((p) => p.id === planta)
 
   return (
-    <Pagina titulo="Equipos y criticidad" subtitulo={`${lista.length} equipos · ${resumen.C} críticos · ${resumen.MC} medios · ${resumen.NC} no críticos`}
-      acciones={editable && <>
-        <Boton variante="secundario" onClick={() => setPlantasAbierto(true)}>Plantas y sectores</Boton>
-        <Boton variante="secundario" onClick={() => nav('/equipos/qr')}>Etiquetas QR</Boton>
-        <Boton onClick={() => setEditando({ io: 1, fo: 1, isa: 0, activo: true, planta_id: planta || pl?.plantas[0]?.id })}>+ Nuevo equipo</Boton>
+    <Pagina kicker="Módulo 1 · Planificación" titulo="Equipos y criticidad"
+      acciones={<>
+        {([['', 'Todos'], ['C', 'C · Crítico'], ['MC', 'MC · Media'], ['NC', 'NC · No crítico']] as const).map(([v, t]) => <Chip key={v} activo={clas === v} onClick={() => setClas(v)}>{t}</Chip>)}
+        <select className="campo-chico" value={orden} onChange={(e) => setOrden(e.target.value as 'desc' | 'asc')} aria-label="Ordenar">
+          <option value="desc">Más críticos primero</option><option value="asc">Menos críticos primero</option>
+        </select>
       </>}>
-      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-4">
-        <input className="campo" placeholder="Buscar código o nombre…" value={texto} onChange={(e) => setTexto(e.target.value)} />
-        <select className="campo" value={planta} onChange={(e) => { setPlanta(e.target.value); setSector('') }}>
-          <option value="">Todas las plantas</option>{(pl?.plantas ?? []).map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.nombre}</option>)}
-        </select>
-        <select className="campo" value={sector} onChange={(e) => setSector(e.target.value)}>
-          <option value="">Todos los sectores</option>{(pl?.sectores ?? []).filter((s) => !planta || s.planta_id === planta).map((s) => <option key={s.id} value={s.id}>{s.codigo} · {s.nombre}</option>)}
-        </select>
-        <select className="campo" value={clas} onChange={(e) => setClas(e.target.value)}>
-          <option value="">Toda criticidad</option><option value="C">C · Críticos</option><option value="MC">MC · Medios</option><option value="NC">NC · No críticos</option>
-        </select>
+      <div className="flex flex-wrap items-center gap-2.5 text-sm text-suave">
+        <label className="flex items-center gap-1.5 rounded-full border border-borde bg-white py-1 pl-3.5 pr-1.5">Planta:
+          <select className="bg-transparent py-1 font-semibold text-texto outline-none" value={planta} onChange={(e) => { setPlanta(e.target.value); setSector('') }}>
+            <option value="">Todas</option>{(pl?.plantas ?? []).map((p) => <option key={p.id} value={p.id}>{p.nombre} ({p.codigo})</option>)}
+          </select>
+        </label>
+        {plSel && (
+          <select className="campo-chico" value={sector} onChange={(e) => setSector(e.target.value)}>
+            <option value="">Todos los sectores</option>{(pl?.sectores ?? []).filter((s) => s.planta_id === planta).map((s) => <option key={s.id} value={s.id}>{s.codigo} · {s.nombre}</option>)}
+          </select>
+        )}
+        <input className="campo-chico min-w-[220px]" placeholder="Buscar código o nombre…" value={texto} onChange={(e) => setTexto(e.target.value)} />
+        <span className="hidden lg:inline">Código: Fábrica-Sector-Equipo-Número · la criticidad sale de la matriz, no se carga a mano.</span>
+        {editable && <span className="ml-auto flex flex-wrap gap-2">
+          <Boton chico variante="secundario" onClick={() => setPlantasAbierto(true)}>Plantas y sectores</Boton>
+          <Boton chico variante="secundario" onClick={() => nav('/equipos/qr')}>Etiquetas QR</Boton>
+          <Boton chico onClick={() => setEditando({ io: 1, fo: 1, isa: 0, activo: true, planta_id: planta || pl?.plantas[0]?.id })}>+ Nuevo equipo</Boton>
+        </span>}
       </div>
       <ErrorBox texto={error} />
       {cargando ? <Cargando /> : !lista.length ? (
         <Vacio texto={data?.length ? 'Ningún equipo coincide con el filtro.' : 'Todavía no hay equipos. Cargá las plantas y sectores, y después los equipos (o importá la planilla RG MA 01).'} />
       ) : (
-        <Tarjeta className="overflow-x-auto">
-          <table className="tabla -m-4 w-[calc(100%+2rem)]">
-            <thead><tr><th>Código</th><th>Equipo</th><th>Planta / sector</th><th title="Impacto operacional">IO</th><th title="Flexibilidad operacional">FO</th><th title="Costo de mantenimiento">CM</th><th title="Seguridad y ambiente">ISA</th><th>Criticidad</th><th>Reemplazo</th></tr></thead>
+        <div className="tarjeta overflow-x-auto">
+          <table className="tabla min-w-[760px]">
+            <thead><tr><th>Código</th><th>Descripción</th><th>Planta</th><th>Sector</th>
+              <th className="cursor-pointer !text-primario-oscuro" onClick={() => setOrden(orden === 'desc' ? 'asc' : 'desc')}>Puntaje {orden === 'desc' ? '↓' : '↑'}</th>
+              <th className="cursor-pointer !text-primario-oscuro" onClick={() => setOrden(orden === 'desc' ? 'asc' : 'desc')}>Criticidad {orden === 'desc' ? '↓' : '↑'}</th></tr></thead>
             <tbody>
-              {lista.map((e) => (
+              {lista.slice(0, 400).map((e) => (
                 <tr key={e.id} className={`cursor-pointer ${e.activo ? '' : 'opacity-50'}`} onClick={() => nav(`/equipos/${e.id}`)}>
-                  <td className="whitespace-nowrap font-bold">{e.codigo}</td><td>{e.nombre}</td>
-                  <td className="text-suave">{e.planta_codigo}{e.sector_nombre ? ` / ${e.sector_nombre}` : ''}</td>
-                  <td>{e.io}</td><td>{e.fo}</td><td>{e.cm}</td><td>{e.isa}</td>
-                  <td><InsCriticidad c={e.clasificacion} valor={e.criticidad} /></td>
-                  <td>{e.tiene_reemplazo ? 'Sí' : 'No'}</td>
+                  <td className="whitespace-nowrap text-[13px] font-semibold">{e.codigo}</td><td>{e.nombre}</td>
+                  <td className="text-suave">{e.planta_nombre}</td><td className="text-suave">{e.sector_codigo ?? '—'}</td>
+                  <td className="font-semibold">{e.criticidad ?? '—'}</td>
+                  <td className="w-[140px]"><InsCriticidad c={e.clasificacion} ancho /></td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </Tarjeta>
+        </div>
       )}
+      <div className="text-[13px] text-tenue">{lista.length} equipos · {resumen.C} críticos, {resumen.MC} de media, {resumen.NC} no críticos{lista.length > 400 ? ' · se muestran los primeros 400' : ''} · Tocá un equipo para ver su ficha.</div>
       {editando && <FormEquipo equipo={editando} plantas={pl?.plantas ?? []} sectores={pl?.sectores ?? []} onCerrar={() => setEditando(null)} onListo={(id) => { setEditando(null); void recargar(); if (id) nav(`/equipos/${id}`) }} />}
       {plantasAbierto && <PlantasSectores plantas={pl?.plantas ?? []} sectores={pl?.sectores ?? []} onCerrar={() => setPlantasAbierto(false)} onCambio={() => void recargarPlantas()} />}
     </Pagina>

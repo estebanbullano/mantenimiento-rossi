@@ -19,12 +19,12 @@ export function SelectorEquipo({ equipos, valor, onCambio, placeholder = 'Buscar
 
   if (elegido) {
     return (
-      <div className="flex items-center justify-between gap-2 rounded-lg border border-borde bg-white px-3 py-2">
+      <div className="flex items-center justify-between gap-2 rounded-[14px] border border-borde-campo bg-white px-3.5 py-2.5">
         <div className="min-w-0">
-          <div className="truncate text-sm font-bold">{elegido.codigo}</div>
+          <div className="truncate text-sm font-semibold">{elegido.codigo}</div>
           <div className="truncate text-xs text-suave">{elegido.nombre} · {elegido.planta_nombre}{elegido.sector_nombre ? ` / ${elegido.sector_nombre}` : ''}</div>
         </div>
-        <button type="button" className="text-sm font-bold text-primario" onClick={() => onCambio(null)}>Cambiar</button>
+        <button type="button" className="text-sm font-semibold text-primario" onClick={() => onCambio(null)}>Cambiar</button>
       </div>
     )
   }
@@ -34,13 +34,13 @@ export function SelectorEquipo({ equipos, valor, onCambio, placeholder = 'Buscar
         onChange={(e) => { setTexto(e.target.value); setAbierto(true) }} onFocus={() => setAbierto(true)}
         onBlur={() => setTimeout(() => setAbierto(false), 150)} />
       {abierto && (
-        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-borde bg-white shadow-lg">
+        <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-[14px] border border-borde bg-white shadow-lg">
           {filtrados.length === 0 && <div className="p-3 text-sm text-suave">Sin resultados</div>}
           {filtrados.map((e) => (
             <button type="button" key={e.id} onMouseDown={() => { onCambio(e.id); setTexto('') }}
-              className="flex w-full items-center justify-between gap-2 border-b border-borde px-3 py-2 text-left last:border-0 hover:bg-fondo-2">
+              className="flex w-full items-center justify-between gap-2 border-b border-borde px-3 py-2 text-left last:border-0 hover:bg-crema">
               <span className="min-w-0">
-                <span className="block truncate text-sm font-bold">{e.codigo}</span>
+                <span className="block truncate text-sm font-semibold">{e.codigo}</span>
                 <span className="block truncate text-xs text-suave">{e.nombre}</span>
               </span>
               <InsCriticidad c={e.clasificacion} />
@@ -76,7 +76,7 @@ export function SelectorArticulo({ onElegir, placeholder = 'Buscar repuesto en e
         <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-borde bg-white shadow-lg">
           {res.map((a) => (
             <button type="button" key={a.id} onClick={() => { onElegir(a); setTexto(''); setRes([]) }}
-              className="flex w-full justify-between gap-2 border-b border-borde px-3 py-2 text-left text-sm last:border-0 hover:bg-fondo-2">
+              className="flex w-full justify-between gap-2 border-b border-borde px-3 py-2 text-left text-sm last:border-0 hover:bg-crema">
               <span><b>{a.codigo}</b> · {a.descripcion}</span>
               <span className={`whitespace-nowrap ${a.bajo_minimo ? 'text-primario' : 'text-suave'}`}>Stock {a.stock_actual} {a.unidad}</span>
             </button>
@@ -93,10 +93,10 @@ export function BotonFoto({ onArchivo, texto = 'Sacar foto', cargando, aceptar =
   const ref = useRef<HTMLInputElement>(null)
   return (
     <>
-      <input ref={ref} type="file" accept={aceptar} capture={aceptar === 'image/*' ? 'environment' : undefined} className="hidden"
+      <input ref={ref} type="file" accept={aceptar} className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onArchivo(f); e.target.value = '' }} />
       <button type="button" disabled={cargando} onClick={() => ref.current?.click()}
-        className="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-dashed border-primario/50 bg-primario/5 px-4 py-3 font-bold text-primario disabled:opacity-50">
+        className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-[14px] border-[1.5px] border-dashed border-primario bg-white px-4 py-3 text-sm font-semibold text-primario-oscuro disabled:opacity-50">
         {cargando ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <IconoCamara />}
         {cargando ? 'Subiendo…' : texto}
       </button>
@@ -109,13 +109,10 @@ export const IconoCamara = () => (
 )
 
 /** Miniatura de una foto guardada en el bucket privado */
-export function Foto({ ruta, className = 'h-24 w-24' }: { ruta: string; className?: string }) {
+export function Foto({ ruta, className = 'h-24 w-24', sinEnlace }: { ruta: string; className?: string; sinEnlace?: boolean }) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => { void urlFirmada(ruta).then(setUrl) }, [ruta])
-  if (!url) return <div className={`${className} animate-pulse rounded-lg bg-fondo-2`} />
-  return (
-    <a href={url} target="_blank" rel="noreferrer">
-      <img src={url} alt="" className={`${className} rounded-lg border border-borde object-cover`} />
-    </a>
-  )
+  if (!url) return <div className={`${className} rayado animate-pulse rounded-[14px]`} />
+  const img = <img src={url} alt="" className={`${className} rounded-[14px] object-cover`} />
+  return sinEnlace ? img : <a href={url} target="_blank" rel="noreferrer">{img}</a>
 }

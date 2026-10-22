@@ -20,6 +20,8 @@ export interface Usuario {
   turno: string | null
   limite_aprobacion_usd: number
   activo: boolean
+  legajo?: string | null
+  dni?: string | null
 }
 
 export interface Planta { id: string; codigo: string; nombre: string; activo: boolean }
@@ -129,7 +131,11 @@ export interface Pedido {
   motivo_rechazo: string | null
   foto_ruta: string | null
   creado_en: string
+  nombre_contacto?: string | null
+  email_contacto?: string | null
   // de la vista
+  planta_nombre?: string | null
+  sector_nombre?: string | null
   equipo_codigo?: string | null
   equipo_nombre?: string | null
   solicitante_nombre?: string | null
@@ -172,7 +178,12 @@ export interface Orden {
   tiempo_real_min: number | null
   comentario_cierre: string | null
   creado_en: string
+  observacion?: string | null
+  revision_foto?: 'pendiente' | 'aprobada' | 'rehacer' | null
+  revisada_en?: string | null
   equipo_codigo?: string | null
+  equipo_clasificacion?: Clasificacion | null
+  asignado_turno?: string | null
   equipo_nombre?: string | null
   planta_id?: string | null
   tarea_unidad?: string | null
@@ -227,6 +238,7 @@ export interface Compra {
   decidido_en: string | null
   comentario: string | null
   creado_en: string
+  planta_id?: string | null
 }
 
 export interface Config {

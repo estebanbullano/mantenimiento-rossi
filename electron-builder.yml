@@ -22,7 +22,7 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: always
   shortcutName: Mantenimiento Rossi
-# Releases en el repositorio propio del sistema (GitHub Releases).
+# Actualizaciones automáticas desde los releases de este mismo repositorio
 publish:
   provider: github
   owner: estebanbullano

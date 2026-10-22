@@ -1,233 +1,305 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Fragment, useMemo, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { mensajeError, supabase } from '@/lib/supabase'
 import { useSesion } from '@/lib/sesion'
 import { useOperarios } from '@/lib/catalogos'
-import { useDatos } from '@/lib/util'
-import { AREAS, type Pedido, type Prioridad } from '@/lib/tipos'
-import { ANTIGUEDADES, cargarDetalles, cumpleAntiguedad, estadoTicket, grupoPrioridad, tituloTicket, type Antiguedad } from '@/lib/tickets'
-import { Boton, Cargando, ErrorBox, Pagina, Vacio, useAviso } from '@/components/ui'
-import { FormularioPedido, TarjetaTicket, type Detalles } from '@/components/Ticket'
+import { fmtFecha, fmtNum, hoy, lunesDe, numOT, numPedido, sumarDias, useDatos } from '@/lib/util'
+import type { ComentarioPedido, Orden, Pedido, Prioridad, Usuario } from '@/lib/tipos'
+import { Barra, Boton, Cargando, ErrorBox, ESTADO_EQUIPO, H2, InsEstadoEquipo, InsEstadoPedido, InsPrioridad, OkBox, Pagina, estadoBandeja, useAviso } from '@/components/ui'
+import { Foto } from '@/components/selectores'
+import { MarcoTelefono, PedidosCelular } from './Solicitante'
 
-type VistaMant = 'priorizacion' | 'lista' | 'equipo' | 'mios'
-
-/** Tickets de mantenimiento: la vista del solicitante (celular) y el panel de mantenimiento */
+/** "Pedidos": la bandeja para mantenimiento; para el resto, su vista de celular */
 export function Pedidos() {
   const { puede } = useSesion()
   const [params] = useSearchParams()
-  const esMant = puede('referente', 'supervisor')
-  return esMant && !params.get('mios') ? <PanelMantenimiento /> : <VistaSolicitante />
+  if (puede('referente', 'supervisor', 'director') && !params.get('mios')) return <Bandeja />
+  return <MarcoTelefono><PedidosCelular inicial="mis" /></MarcoTelefono>
 }
 
-/** Tickets (todos, o solo los de un solicitante) con sus comentarios y materiales */
-function useTickets(solicitanteId?: string) {
-  const [detalles, setDetalles] = useState<Detalles>({ comentarios: {}, materiales: {} })
-  const r = useDatos(async () => {
-    let q = supabase.from('mant_v_pedidos').select('*').order('creado_en', { ascending: false }).limit(400)
-    if (solicitanteId) q = q.eq('solicitante_id', solicitanteId)
-    const res = await q
-    const data = (res.data ?? []) as Pedido[]
-    setDetalles(await cargarDetalles(data.map((t) => t.id)))
-    return { data, error: res.error }
-  }, [solicitanteId])
-  return { ...r, detalles }
+const edad = (iso: string) => {
+  const h = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3600000))
+  return h < 1 ? 'recién' : h < 24 ? `hace ${h} h` : `hace ${Math.round(h / 24)} d`
 }
+const filaDato = (k: string, v: React.ReactNode) => (
+  <div className="grid grid-cols-[170px_minmax(0,1fr)] items-baseline gap-3 border-b border-linea-2 px-3.5 py-2.5 last:border-0">
+    <span className="text-[13px] text-tenue">{k}</span><span className="font-medium">{v}</span>
+  </div>
+)
 
-// ---------------------------------------------------------------------
-// Solicitante: formulario + seguimiento de sus pedidos
-// ---------------------------------------------------------------------
-function VistaSolicitante() {
-  const { usuario, puede } = useSesion()
-  const [tab, setTab] = useState<'activos' | 'completados'>('activos')
-  const [fPrio, setFPrio] = useState('')
-  const [fEstado, setFEstado] = useState('')
-  const [fAntig, setFAntig] = useState<Antiguedad>('')
-  const [mostrarForm, setMostrarForm] = useState(true)
-  const { data, cargando, error, recargar, detalles } = useTickets(usuario!.id)
+type FEstado = 'abiertos' | 'nuevos' | 'pendientes' | 'proceso' | 'completados' | 'todos'
 
-  const lista = useMemo(() => {
-    let l = data ?? []
-    l = l.filter((t) => fEstado ? estadoTicket(t.estado) === fEstado : (tab === 'completados' ? estadoTicket(t.estado) === 'completado' : estadoTicket(t.estado) !== 'completado'))
-    if (fPrio) l = l.filter((t) => grupoPrioridad(t.prioridad) === fPrio)
-    l = l.filter((t) => cumpleAntiguedad(t, fAntig))
-    const orden = { alta: 0, media: 1, baja: 2 }
-    return l.slice().sort((a, b) => orden[grupoPrioridad(a.prioridad)] - orden[grupoPrioridad(b.prioridad)] || b.creado_en.localeCompare(a.creado_en))
-  }, [data, tab, fPrio, fEstado, fAntig])
-
-  const sel = 'campo w-auto py-1.5 text-xs'
-  return (
-    <Pagina titulo="Pedidos de reparación" subtitulo={data ? `${data.length} pedidos tuyos registrados` : 'cargando…'}
-      acciones={puede('referente', 'supervisor') ? <Boton variante="secundario" onClick={() => { window.location.hash = '#/pedidos' }}>Vista mantenimiento</Boton> : undefined}>
-      {mostrarForm ? <FormularioPedido onEnviado={() => { setTab('activos'); void recargar() }} /> : <Boton onClick={() => setMostrarForm(true)}>+ Nuevo pedido</Boton>}
-
-      <div className="mt-4 rounded-xl border border-borde bg-white p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded-lg border border-borde">
-            {(['activos', 'completados'] as const).map((v) => (
-              <button key={v} onClick={() => setTab(v)} className={`px-3 py-1.5 text-xs font-bold ${tab === v ? 'bg-pendiente text-[#2a1f00]' : 'bg-fondo-2 text-suave'}`}>{v === 'activos' ? 'Activos' : 'Completados'}</button>
-            ))}
-          </div>
-          <select className={sel} value={fPrio} onChange={(e) => setFPrio(e.target.value)}><option value="">Prioridad: todas</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select>
-          <select className={sel} value={fEstado} onChange={(e) => setFEstado(e.target.value)}><option value="">Estado: todos</option><option value="pendiente">Pendiente</option><option value="proceso">En proceso</option><option value="completado">Completado</option></select>
-          <select className={sel} value={fAntig} onChange={(e) => setFAntig(e.target.value as Antiguedad)}>{ANTIGUEDADES.map(([v, txt]) => <option key={v} value={v}>{txt}</option>)}</select>
-          <button className="text-xs font-bold text-suave underline" onClick={() => { setFPrio(''); setFEstado(''); setFAntig('') }}>Limpiar filtros</button>
-        </div>
-      </div>
-
-      <ErrorBox texto={error} />
-      {cargando && !data ? <Cargando /> : lista.length === 0 ? (
-        <Vacio texto={tab === 'completados' ? 'Todavía no hay pedidos completados' : 'No tenés pedidos activos'}>
-          <span className="text-xs">{tab === 'completados' ? 'Acá vas a ver los pedidos una vez que mantenimiento los cierre.' : 'Usá el formulario de arriba para enviar uno.'}</span>
-        </Vacio>
-      ) : (
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {lista.map((t) => <TarjetaTicket key={t.id} t={t} modo="solicitante" detalles={detalles} onCambio={() => void recargar()} />)}
-        </div>
-      )}
-    </Pagina>
-  )
-}
-
-// ---------------------------------------------------------------------
-// Mantenimiento: priorización, lista, por equipo
-// ---------------------------------------------------------------------
-function PanelMantenimiento() {
-  const avisar = useAviso()
+function Bandeja() {
   const [params] = useSearchParams()
-  const { data: operarios } = useOperarios()
-  const [vista, setVista] = useState<VistaMant>(params.get('busca') ? 'lista' : 'priorizacion')
-  const [busca, setBusca] = useState(params.get('busca') ?? '')
-  const [fEstado, setFEstado] = useState('')
   const [fPrio, setFPrio] = useState('')
-  const [fRec, setFRec] = useState('')
-  const [fArea, setFArea] = useState('')
-  const [fResp, setFResp] = useState('')
-  const [fAntig, setFAntig] = useState<Antiguedad>('')
-  const [sel, setSel] = useState<Set<string>>(new Set())
-  const [bulkPrio, setBulkPrio] = useState('')
-  const [bulkCom, setBulkCom] = useState('')
-  const [mostrarForm, setMostrarForm] = useState(false)
-  const { data, cargando, error, recargar, detalles } = useTickets()
-  useEffect(() => setSel(new Set()), [vista])
+  const [fEstado, setFEstado] = useState<FEstado>('abiertos')
+  const [orden, setOrden] = useState<'recientes' | 'antiguos'>('recientes')
+  const [abierto, setAbierto] = useState<string | null>(params.get('id'))
+  const { data: operarios } = useOperarios()
 
-  const stats = useMemo(() => {
-    const c = { pendiente: 0, proceso: 0, completado: 0, espera: 0 }
-    for (const t of data ?? []) { const e = estadoTicket(t.estado); if (e in c) c[e as keyof typeof c]++; if (t.recursos === 'esperando' && e !== 'completado') c.espera++ }
-    return c
-  }, [data])
+  const { data, cargando, error, recargar } = useDatos(async () => {
+    const lunes = lunesDe(new Date())
+    const [p, o] = await Promise.all([
+      supabase.from('mant_v_pedidos').select('*').order('creado_en', { ascending: false }).limit(500),
+      supabase.from('mant_v_ordenes').select('id,asignado_id,fecha_programada,duracion_estimada_horas,estado,tipo')
+        .gte('fecha_programada', lunes).lte('fecha_programada', sumarDias(lunes, 6)).in('estado', ['pendiente', 'en_proceso', 'completada'])
+    ])
+    return { data: { pedidos: (p.data ?? []) as Pedido[], ots: (o.data ?? []) as Orden[] }, error: p.error || o.error }
+  })
 
   const lista = useMemo(() => {
-    const q = busca.toLowerCase().trim()
-    return (data ?? []).filter((t) => {
-      const e = estadoTicket(t.estado)
-      if (fEstado && e !== fEstado) return false
-      if (!fEstado && e === 'rechazado') return false
-      if (fPrio && grupoPrioridad(t.prioridad) !== fPrio) return false
-      if (fRec && t.recursos !== fRec) return false
-      if (fArea && t.area !== fArea) return false
-      if (fResp && !(t.responsable_nombre ?? '').toLowerCase().includes(fResp.toLowerCase())) return false
-      if (!cumpleAntiguedad(t, fAntig)) return false
-      if (q && !`${tituloTicket(t)} ${t.equipo_codigo ?? ''} ${t.equipo_nombre ?? ''} ${t.area ?? ''} ${t.descripcion} ${t.solicitante_nombre ?? ''}`.toLowerCase().includes(q)) return false
+    let l = data?.pedidos ?? []
+    l = l.filter((p) => {
+      const [, est] = estadoBandeja(p.estado, p.prioridad)
+      if (fEstado === 'abiertos') return est === 'Nuevo' || est === 'Pendiente' || est === 'En proceso'
+      if (fEstado === 'nuevos') return est === 'Nuevo'
+      if (fEstado === 'pendientes') return est === 'Pendiente'
+      if (fEstado === 'proceso') return est === 'En proceso'
+      if (fEstado === 'completados') return est === 'Completado'
       return true
     })
-  }, [data, busca, fEstado, fPrio, fRec, fArea, fResp, fAntig])
+    if (fPrio === 'sin') l = l.filter((p) => !p.prioridad)
+    else if (fPrio) l = l.filter((p) => (fPrio === 'alta' ? p.prioridad === 'alta' || p.prioridad === 'urgente' : p.prioridad === fPrio))
+    return orden === 'antiguos' ? l.slice().reverse() : l
+  }, [data, fPrio, fEstado, orden])
 
-  async function aplicarPrioridad() {
-    if (!bulkPrio) return
-    const { error } = await supabase.from('mant_pedidos').update({ prioridad: bulkPrio as Prioridad }).in('id', [...sel])
-    if (error) avisar(mensajeError(error), 'error')
-    setBulkPrio(''); void recargar()
-  }
-  async function aplicarEstado(estado: string) {
-    if (!estado) return
-    for (const id of sel) {
-      const { error } = await supabase.rpc('mant_estado_pedido', { p_pedido: id, p_estado: estado })
-      if (error) { avisar(mensajeError(error), 'error'); break }
-    }
-    void recargar()
-  }
-  async function aplicarComentario() {
-    const texto = bulkCom.trim(); if (!texto) return
-    const { error } = await supabase.from('mant_pedido_comentarios').insert([...sel].map((pedido_id) => ({ pedido_id, texto })))
-    if (error) avisar(mensajeError(error), 'error')
-    setBulkCom(''); void recargar()
-  }
-
-  const tarjeta = (t: Pedido) => (
-    <TarjetaTicket key={t.id} t={t} modo="mantenimiento" detalles={detalles} operarios={operarios ?? []}
-      seleccionado={sel.has(t.id)} onSeleccionar={(v) => setSel((s) => { const n = new Set(s); if (v) n.add(t.id); else n.delete(t.id); return n })}
-      onCambio={() => void recargar()} />
-  )
-  const grilla = (ts: Pedido[]) => <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{ts.map(tarjeta)}</div>
-  const titulo = (txt: string, color = 'text-suave border-borde') => <h2 className={`mb-2.5 mt-5 border-b pb-1.5 text-sm font-extrabold uppercase tracking-wide first:mt-0 ${color}`}>{txt}</h2>
-
-  let contenido: ReactNode
-  if (cargando && !data) contenido = <Cargando />
-  else if (!data?.length) contenido = <Vacio texto="No hay tickets cargados. Esperá pedidos de las áreas o cargá uno vos." />
-  else if (!lista.length) contenido = <Vacio texto="Ningún resultado. Probá ajustar o limpiar los filtros." />
-  else if (vista === 'priorizacion') {
-    const abiertos = lista.filter((t) => estadoTicket(t.estado) !== 'completado')
-    const g = { alta: abiertos.filter((t) => grupoPrioridad(t.prioridad) === 'alta'), media: abiertos.filter((t) => grupoPrioridad(t.prioridad) === 'media'), baja: abiertos.filter((t) => grupoPrioridad(t.prioridad) === 'baja') }
-    contenido = abiertos.length ? <>
-      {g.alta.length > 0 && <>{titulo(`Prioridad alta (${g.alta.length})`, 'text-[#c1440e] border-[#c1440e]')}{grilla(g.alta)}</>}
-      {g.media.length > 0 && <>{titulo(`Prioridad media (${g.media.length})`, 'text-[#9a7100] border-pendiente')}{grilla(g.media)}</>}
-      {g.baja.length > 0 && <>{titulo(`Prioridad baja (${g.baja.length})`)}{grilla(g.baja)}</>}
-    </> : <Vacio texto="Todo al día. No quedan tickets abiertos con los filtros actuales." />
-  } else if (vista === 'equipo') {
-    const grupos: Record<string, Pedido[]> = {}
-    for (const t of lista) (grupos[t.equipo_codigo ? `${t.equipo_codigo} · ${t.equipo_nombre}` : 'Sin equipo asignado'] ??= []).push(t)
-    contenido = Object.keys(grupos).sort().map((k) => <div key={k}>{titulo(`${k} (${grupos[k].length})`)}{grilla(grupos[k])}</div>)
-  } else contenido = grilla(lista)
-
-  const selCls = 'campo w-auto py-1.5 text-xs'
+  const sel = 'min-h-[40px] rounded-full border border-borde-campo bg-white px-3.5 py-2 text-sm text-texto'
   return (
-    <Pagina titulo="Panel de mantenimiento" subtitulo={data ? `Datos compartidos con el equipo · ${data.length} tickets registrados` : 'cargando…'}
-      acciones={<div className="flex flex-wrap gap-1.5">
-        {([['pendiente', 'Pendientes', 'text-[#9a7100]'], ['proceso', 'En proceso', 'text-revision'], ['completado', 'Completadas', 'text-aprobado'], ['espera', 'Esperan material', 'text-[#c1440e]']] as const).map(([k, txt, c]) => (
-          <div key={k} className="min-w-[76px] rounded-lg border border-borde bg-white px-3 py-1.5 text-center">
-            <div className={`text-xl font-extrabold leading-none ${c}`}>{stats[k]}</div>
-            <div className="mt-1 text-[10px] uppercase tracking-wide text-suave">{txt}</div>
+    <Pagina kicker="Módulo 2 · Correctivo" titulo="Bandeja de pedidos">
+      <div className="flex flex-wrap items-center gap-[18px] text-[13px]">
+        <label className="flex items-center gap-2"><span className="font-medium text-suave">Prioridad</span>
+          <select className={sel} value={fPrio} onChange={(e) => setFPrio(e.target.value)}>
+            <option value="">Todas</option><option value="sin">Sin prioridad</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option>
+          </select></label>
+        <label className="flex items-center gap-2"><span className="font-medium text-suave">Estado</span>
+          <select className={sel} value={fEstado} onChange={(e) => setFEstado(e.target.value as FEstado)}>
+            <option value="abiertos">Abiertos</option><option value="nuevos">Nuevos</option><option value="pendientes">Pendientes</option><option value="proceso">En proceso</option><option value="completados">Completados</option><option value="todos">Todos</option>
+          </select></label>
+        <label className="flex items-center gap-2"><span className="font-medium text-suave">Antigüedad</span>
+          <select className={sel} value={orden} onChange={(e) => setOrden(e.target.value as 'recientes' | 'antiguos')}>
+            <option value="recientes">Más recientes</option><option value="antiguos">Más antiguos</option>
+          </select></label>
+      </div>
+      <ErrorBox texto={error} />
+      <div className="tarjeta overflow-x-auto">
+        <div className="min-w-[940px]">
+          <div className="grid grid-cols-[86px_minmax(0,1fr)_200px_100px_130px_120px_36px] gap-3 border-b border-linea px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.05em] text-tenue">
+            <span>Pedido</span><span>Detalle</span><span>Equipo</span><span>Antigüedad</span><span>Prioridad</span><span>Estado</span><span />
           </div>
-        ))}
-      </div>}>
-      <div className="mb-4 rounded-xl border border-borde bg-white p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Boton onClick={() => setMostrarForm((v) => !v)}>{mostrarForm ? 'Cerrar formulario' : '+ Nuevo ticket'}</Boton>
-          <div className="flex overflow-hidden rounded-lg border border-borde">
-            {([['priorizacion', 'Priorización'], ['lista', 'Lista'], ['equipo', 'Por equipo']] as [VistaMant, string][]).map(([v, txt]) => (
-              <button key={v} onClick={() => setVista(v)} className={`whitespace-nowrap px-3 py-1.5 text-xs font-bold ${vista === v ? 'bg-pendiente text-[#2a1f00]' : 'bg-fondo-2 text-suave'}`}>{txt}</button>
-            ))}
-            <a href="#/agenda" className="whitespace-nowrap bg-fondo-2 px-3 py-1.5 text-xs font-bold text-suave">Agenda semanal</a>
-          </div>
-          <input className="campo min-w-40 flex-1 py-1.5 text-xs" placeholder="Buscar por título, equipo, área o descripción…" value={busca} onChange={(e) => setBusca(e.target.value)} />
-        </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <select className={selCls} value={fEstado} onChange={(e) => setFEstado(e.target.value)}><option value="">Estado: todos</option><option value="pendiente">Pendiente</option><option value="proceso">En proceso</option><option value="completado">Completado</option><option value="rechazado">Descartado</option></select>
-          <select className={selCls} value={fPrio} onChange={(e) => setFPrio(e.target.value)}><option value="">Prioridad: todas</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select>
-          <select className={selCls} value={fRec} onChange={(e) => setFRec(e.target.value)}><option value="">Recursos: todos</option><option value="listo">Listo para hacer</option><option value="esperando">Esperando material</option><option value="sinmateriales">Sin materiales cargados</option></select>
-          <select className={selCls} value={fArea} onChange={(e) => setFArea(e.target.value)}><option value="">Área: todas</option>{AREAS.map((a) => <option key={a}>{a}</option>)}</select>
-          <select className={selCls} value={fAntig} onChange={(e) => setFAntig(e.target.value as Antiguedad)}>{ANTIGUEDADES.map(([v, txt]) => <option key={v} value={v}>{txt}</option>)}</select>
-          <input className="campo w-40 py-1.5 text-xs" placeholder="Filtrar por responsable" value={fResp} onChange={(e) => setFResp(e.target.value)} />
-          <button className="text-xs font-bold text-suave underline" onClick={() => { setFEstado(''); setFPrio(''); setFRec(''); setFArea(''); setFResp(''); setFAntig(''); setBusca('') }}>Limpiar filtros</button>
+          {cargando && !data ? <Cargando /> : lista.length === 0 ? <div className="p-5 text-sm text-suave">No hay pedidos con esos filtros.</div> : lista.map((p) => (
+            <Fragment key={p.id}>
+              <button onClick={() => setAbierto(abierto === p.id ? null : p.id)}
+                className={`grid w-full grid-cols-[86px_minmax(0,1fr)_200px_100px_130px_120px_36px] items-center gap-3 border-b border-linea-2 px-5 py-3.5 text-left text-texto ${abierto === p.id ? 'bg-rojo-suave' : 'bg-white hover:bg-crema'}`}>
+                <span className="text-[13px] font-semibold">{numPedido(p.numero)}</span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-sm font-medium">{p.titulo || p.descripcion}</span>
+                  <span className="truncate text-xs text-tenue">{[p.area, p.nombre_contacto ?? p.solicitante_nombre].filter(Boolean).join(' · ')}</span>
+                </span>
+                <span className="flex flex-col items-start gap-1">
+                  <span className="text-[13px]">{p.equipo_nombre ?? p.ubicacion ?? 'Sin equipo'}</span>
+                  <InsEstadoEquipo u={p.urgencia_reportada} />
+                </span>
+                <span className="text-[13px] text-suave">{edad(p.creado_en)}</span>
+                <InsPrioridad p={p.prioridad} ancho />
+                <InsEstadoPedido e={p.estado} prioridad={p.prioridad} ancho />
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-fondo font-bold text-primario-oscuro">{abierto === p.id ? '−' : '+'}</span>
+              </button>
+              {abierto === p.id && <DetallePedido p={p} operarios={operarios ?? []} ots={data?.ots ?? []} onCambio={() => void recargar()} />}
+            </Fragment>
+          ))}
         </div>
       </div>
-
-      {mostrarForm && <div className="mb-4"><FormularioPedido compacto onEnviado={() => { setMostrarForm(false); void recargar() }} /></div>}
-
-      {sel.size > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-[#c1440e] bg-[#c1440e]/10 px-3 py-2">
-          <span className="font-mono text-xs font-bold text-[#c1440e]">{sel.size} seleccionado{sel.size > 1 ? 's' : ''}</span>
-          <select className={selCls} value="" onChange={(e) => void aplicarEstado(e.target.value)}><option value="">Cambiar estado a…</option><option value="pendiente">Pendiente</option><option value="proceso">En proceso</option></select>
-          <select className={selCls} value={bulkPrio} onChange={(e) => setBulkPrio(e.target.value)}><option value="">Cambiar prioridad a…</option><option value="urgente">Urgente</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select>
-          <Boton variante="secundario" className="py-1.5 text-xs" onClick={() => void aplicarPrioridad()}>Aplicar prioridad</Boton>
-          <input className="campo min-w-40 flex-1 py-1.5 text-xs" placeholder="Comentario para todos los seleccionados…" value={bulkCom} onChange={(e) => setBulkCom(e.target.value)} />
-          <Boton variante="secundario" className="py-1.5 text-xs" onClick={() => void aplicarComentario()}>Agregar comentario</Boton>
-          <button className="text-xs font-bold text-suave underline" onClick={() => setSel(new Set())}>Deseleccionar</button>
-        </div>
-      )}
-
-      <ErrorBox texto={error} />
-      {contenido}
     </Pagina>
   )
 }
+
+const CAPACIDAD_SEMANA = 5   // jornadas por operario (lunes a viernes)
+
+function DetallePedido({ p, operarios, ots, onCambio }: { p: Pedido; operarios: Usuario[]; ots: Orden[]; onCambio: () => void }) {
+  const nav = useNavigate()
+  const avisar = useAviso()
+  const asignado = p.estado === 'en_ot' || p.estado === 'cerrado'
+  const [prio, setPrio] = useState<Prioridad | null>(p.prioridad)
+  const [plazo, setPlazo] = useState(p.fecha_cierre_estimada ?? sumarDias(hoy(), p.urgencia_reportada === 'alta' ? 1 : p.urgencia_reportada === 'media' ? 3 : 7))
+  const [dur, setDur] = useState(String(p.duracion_dias ?? (p.urgencia_reportada === 'baja' ? 0.25 : 0.5)).replace('.', ','))
+  const [op, setOp] = useState('')
+  const [obs, setObs] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState(false)
+  const durN = Number(dur.replace(',', '.')) || 0
+
+  // Tiempo libre de cada operario esta semana y hoy (OT programadas, en jornadas de 8 h)
+  const recomendados = useMemo(() => {
+    const ops = operarios.filter((u) => u.rol === 'operario')
+    return (ops.length ? ops : operarios).map((u) => {
+      const mias = ots.filter((o) => o.asignado_id === u.id)
+      const semana = mias.reduce((s, o) => s + (o.duracion_estimada_horas ?? 8) / 8, 0)
+      const deHoy = mias.filter((o) => o.fecha_programada === hoy()).reduce((s, o) => s + (o.duracion_estimada_horas ?? 8) / 8, 0)
+      return { u, libre: Math.max(0, CAPACIDAD_SEMANA - semana), libreHoy: Math.max(0, 1 - deHoy) }
+    }).sort((a, b) => b.libre - a.libre)
+  }, [operarios, ots])
+  const mejor = recomendados.find((r) => r.libreHoy >= durN) ?? recomendados[0]
+  const elegido = op || mejor?.u.id || ''
+
+  async function fijarPrioridad(v: Prioridad) {
+    setPrio(v)
+    const { error } = await supabase.from('mant_pedidos').update({ prioridad: v }).eq('id', p.id)
+    if (error) avisar(mensajeError(error), 'error'); else onCambio()
+  }
+
+  async function convertir() {
+    if (!prio) return setError('Elegí la prioridad.')
+    if (!plazo) return setError('Elegí el plazo.')
+    if (!elegido) return setError('Elegí quién lo hace.')
+    setError(null); setGuardando(true)
+    const { error } = await supabase.rpc('mant_convertir_pedido', {
+      p_pedido: p.id, p_prioridad: prio, p_plazo: plazo, p_duracion_dias: durN || 1, p_operario: elegido, p_dia: hoy(), p_observacion: obs.trim() || null
+    })
+    setGuardando(false)
+    if (error) setError(mensajeError(error))
+    else { avisar('Pedido convertido en OT y asignado.'); onCambio() }
+  }
+
+  async function rechazar() {
+    const motivo = prompt('¿Por qué se descarta este pedido? (lo ve el solicitante)')
+    if (motivo === null) return
+    const { error } = await supabase.rpc('mant_resolver_pedido', { p_pedido: p.id, p_aprobar: false, p_motivo: motivo || null })
+    if (error) avisar(mensajeError(error), 'error'); else onCambio()
+  }
+
+  return (
+    <div className="mx-4 mb-4 mt-1 flex flex-col overflow-hidden rounded-tarjeta border-2 border-primario">
+      <div className="flex flex-col gap-2.5 p-5 text-sm">
+        <div className="flex items-center gap-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-rojo-claro text-[13px] font-bold text-primario-oscuro">1</span><H2 texto="Detalle del pedido" className="text-lg" /></div>
+        <div className="overflow-hidden rounded-[14px] border border-linea bg-white">
+          {filaDato('Fecha', new Date(p.creado_en).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }))}
+          {filaDato('Solicitante', p.nombre_contacto ?? p.solicitante_nombre ?? '—')}
+          {filaDato('Área', p.area ?? '—')}
+          {filaDato('Equipo', p.equipo_codigo ? `${p.equipo_nombre} (${p.equipo_codigo})` : p.ubicacion ?? '—')}
+          {filaDato('Estado del equipo', p.urgencia_reportada ? ESTADO_EQUIPO[p.urgencia_reportada][1] : '—')}
+          {p.email_contacto && filaDato('Avisos a', p.email_contacto)}
+        </div>
+        <div className="rounded-[14px] bg-fondo px-3.5 py-3 leading-relaxed"><span className="mb-1 block text-xs text-tenue">Descripción del solicitante</span><span className="whitespace-pre-wrap">{p.descripcion}</span></div>
+        {p.foto_ruta && <Foto ruta={p.foto_ruta} className="h-[220px] w-full max-w-[420px] rounded-[14px]" />}
+        {p.motivo_rechazo && <div className="rounded-[14px] bg-beige px-3.5 py-3"><b>Descartado:</b> {p.motivo_rechazo}</div>}
+      </div>
+
+      <div className="flex flex-col gap-3.5 border-t border-linea bg-[#faf7f2] p-5">
+        <div className="flex items-center gap-2.5"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-primario text-[13px] font-bold text-white">2</span><H2 texto="Asignación de la tarea" className="text-lg" /></div>
+        {asignado ? (
+          <>
+            <OkBox>Convertido en <b>{p.orden_numero ? numOT(p.orden_numero) : 'OT'}</b> · asignado a {p.responsable_nombre ?? '—'} · plazo {fmtFecha(p.fecha_cierre_estimada)}. El solicitante ya ve la fecha comprometida.</OkBox>
+            <div className="flex flex-wrap gap-2">
+              <Boton variante="secundario" onClick={() => nav('/ordenes')}>Ver en la agenda →</Boton>
+              {p.orden_id && <Boton variante="secundario" onClick={() => nav(`/ordenes/${p.orden_id}`)}>Abrir la OT</Boton>}
+            </div>
+            <CambiarPlazo p={p} onCambio={onCambio} />
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-2">
+              <span className="text-[13px] font-semibold">Prioridad</span>
+              <div className="flex gap-1.5">
+                {(['alta', 'media', 'baja'] as Prioridad[]).map((v) => (
+                  <button key={v} onClick={() => void fijarPrioridad(v)}
+                    className={`min-h-[40px] rounded-full border px-4 py-2 text-sm capitalize ${prio === v ? 'border-primario bg-primario font-semibold text-white' : 'border-borde-campo bg-white text-texto-2'}`}>{v}</button>
+                ))}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <label className="flex flex-[1_1_130px] flex-col gap-1.5 text-[13px] font-semibold">Plazo
+                <input type="date" className="campo font-normal" value={plazo} min={hoy()} onChange={(e) => setPlazo(e.target.value)} /></label>
+              <label className="flex flex-[1_1_100px] flex-col gap-1.5 text-[13px] font-semibold">Duración (días)
+                <input className="campo font-normal" inputMode="decimal" value={dur} onChange={(e) => setDur(e.target.value)} /></label>
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-[13px] font-semibold">Recomendación por tiempo libre</span>
+              {recomendados.slice(0, 3).map((r) => {
+                const activo = elegido === r.u.id
+                return (
+                  <button key={r.u.id} onClick={() => setOp(r.u.id)}
+                    className={`flex flex-col gap-1.5 rounded-2xl border px-3.5 py-3 text-left ${activo ? 'border-2 border-primario bg-white' : 'border-borde bg-white'}`}>
+                    <span className="flex w-full items-center justify-between gap-2">
+                      <span className="text-sm font-semibold">{r.u.nombre} {r.u.turno && <span className="text-xs font-normal text-suave">· turno {r.u.turno.toLowerCase()}</span>}</span>
+                      {r === mejor && <span className="rounded-full bg-aprobado px-2.5 py-0.5 text-[11px] font-bold text-white">Recomendado</span>}
+                    </span>
+                    <span className="text-xs text-suave">Libre {fmtNum(r.libre, 2).replace(/,?0+$/, '')} d en la semana · hoy {fmtNum(r.libreHoy, 2).replace(/,?0+$/, '')} d</span>
+                    <Barra pct={(r.libre / CAPACIDAD_SEMANA) * 100} color="#1e6b3a" alto="h-[5px]" />
+                  </button>
+                )
+              })}
+              <span className="text-xs text-tenue">Ordena por tiempo libre en la semana y verifica que hoy le alcance para {dur || '—'} días.</span>
+            </div>
+            <label className="flex flex-col gap-1.5 text-[13px] font-semibold">O asignar a otro operario
+              <select className="campo font-normal" value={elegido} onChange={(e) => setOp(e.target.value)}>
+                {operarios.map((u) => <option key={u.id} value={u.id}>{u.nombre}{u.turno ? ` · turno ${u.turno.toLowerCase()}` : ''}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-[13px] font-semibold">
+              <span>Observación para el operario <span className="text-xs font-normal text-tenue">Opcional · la ve en el celular junto a la tarea</span></span>
+              <textarea className="campo resize-y font-normal" rows={2} value={obs} onChange={(e) => setObs(e.target.value)} placeholder="Ej.: llevar guía de 3 m del pañol, avisar a producción antes de cortar el paso" />
+            </label>
+            <ErrorBox texto={error} />
+            <Boton grande className="w-full" cargando={guardando} onClick={() => void convertir()}>Convertir en OT y asignar</Boton>
+            {p.estado !== 'rechazado' && <button className="self-start text-[13px] text-tenue underline" onClick={() => void rechazar()}>Descartar el pedido</button>}
+          </>
+        )}
+        <Seguimiento pedidoId={p.id} />
+      </div>
+    </div>
+  )
+}
+
+function CambiarPlazo({ p, onCambio }: { p: Pedido; onCambio: () => void }) {
+  const avisar = useAviso()
+  const [abrir, setAbrir] = useState(false)
+  const [fecha, setFecha] = useState(p.fecha_cierre_estimada ?? hoy())
+  const [motivo, setMotivo] = useState('')
+  if (p.estado === 'cerrado') return null
+  if (!abrir) return <button className="self-start text-[13px] font-semibold text-primario-oscuro" onClick={() => setAbrir(true)}>Cambiar la fecha comprometida</button>
+  async function guardar() {
+    const { error } = await supabase.rpc('mant_cambiar_fecha_cierre', { p_pedido: p.id, p_fecha: fecha, p_motivo: motivo.trim() || null })
+    if (error) avisar(mensajeError(error), 'error'); else { setAbrir(false); onCambio() }
+  }
+  return (
+    <div className="flex flex-wrap items-end gap-2.5 rounded-2xl border border-borde bg-white p-3.5">
+      <label className="flex flex-col gap-1.5 text-[13px] font-semibold">Nueva fecha<input type="date" className="campo font-normal" value={fecha} onChange={(e) => setFecha(e.target.value)} /></label>
+      <label className="flex flex-[1_1_220px] flex-col gap-1.5 text-[13px] font-semibold">Motivo (lo ve el solicitante)<input className="campo font-normal" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej.: falta el repuesto" /></label>
+      <Boton onClick={() => void guardar()}>Guardar</Boton>
+      <Boton variante="fantasma" onClick={() => setAbrir(false)}>Cancelar</Boton>
+    </div>
+  )
+}
+
+function Seguimiento({ pedidoId }: { pedidoId: string }) {
+  const avisar = useAviso()
+  const [texto, setTexto] = useState('')
+  const { data, recargar } = useDatos(async () => {
+    const [c, u] = await Promise.all([
+      supabase.from('mant_pedido_comentarios').select('*').eq('pedido_id', pedidoId).order('creado_en'),
+      supabase.from('mant_usuarios').select('id,nombre')
+    ])
+    const n = Object.fromEntries(((u.data ?? []) as { id: string; nombre: string }[]).map((x) => [x.id, x.nombre]))
+    return { data: ((c.data ?? []) as ComentarioPedido[]).map((x) => ({ ...x, autor_nombre: x.autor_id ? n[x.autor_id] : 'Sistema' })), error: c.error }
+  }, [pedidoId])
+  async function agregar() {
+    if (!texto.trim()) return
+    const { error } = await supabase.from('mant_pedido_comentarios').insert({ pedido_id: pedidoId, texto: texto.trim() })
+    if (error) avisar(mensajeError(error), 'error'); else { setTexto(''); void recargar() }
+  }
+  return (
+    <div className="flex flex-col gap-2 border-t border-linea pt-3.5">
+      <span className="text-[13px] font-semibold">Seguimiento <span className="font-normal text-tenue">· lo ve el solicitante</span></span>
+      {!data?.length ? <span className="text-[13px] text-tenue">Sin novedades todavía.</span> : data.map((c) => (
+        <div key={c.id} className="border-l-2 border-borde-campo pl-2.5 text-[13px]">
+          <div className="text-[11px] text-tenue">{new Date(c.creado_en).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · {c.autor_nombre}</div>{c.texto}
+        </div>
+      ))}
+      <div className="flex gap-2">
+        <input className="campo" placeholder="Agregar una novedad…" value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && void agregar()} />
+        <Boton variante="secundario" onClick={() => void agregar()}>Agregar</Boton>
+      </div>
+    </div>
+  )
+}
+

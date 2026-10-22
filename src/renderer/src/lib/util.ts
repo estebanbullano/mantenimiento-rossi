@@ -99,9 +99,9 @@ export function fmtFrecuencia(valor: number, unidad: Unidad) {
   return n[k] ?? (valor % 12 === 0 && unidad === 'meses' ? `cada ${valor / 12} años` : `cada ${valor} ${UNIDADES[unidad]}`)
 }
 
-export const numOT = (n: number) => `OT-${String(n).padStart(5, '0')}`
-export const numPedido = (n: number) => `P-${String(n).padStart(5, '0')}`
-export const numCompra = (n: number) => `C-${String(n).padStart(5, '0')}`
+export const numOT = (n: number) => `OT-${String(n).padStart(4, '0')}`
+export const numPedido = (n: number) => `PR-${String(n).padStart(4, '0')}`
+export const numCompra = (n: number) => `PP-${String(n).padStart(4, '0')}`
 
 // ---------- Fotos ----------
 /** Achica la foto del celular (4–8 MB) a ~300 KB antes de subirla */

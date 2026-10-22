@@ -135,7 +135,7 @@ check(!!(await fails(null, `set role anon; select mant_generar_semana('2030-01-0
 await db.exec('reset role')
 const otOp = (await as(U.ref, `insert into mant_ordenes (tipo, titulo, asignado_id, estado) values ('correctiva','OT op',$1,'pendiente') returning id`, [U.op])).rows[0].id
 const pedAjeno = (await as(U.sol, `insert into mant_pedidos (descripcion, estado, prioridad) values ('ajeno','cerrado','urgente') returning id, estado, prioridad`)).rows[0]
-check(pedAjeno.estado === 'nuevo' && pedAjeno.prioridad === 'media', 'un pedido nuevo siempre arranca como nuevo, con la prioridad de la urgencia reportada (no la que mande el solicitante)')
+check(pedAjeno.estado === 'nuevo' && pedAjeno.prioridad === null, 'un pedido nuevo siempre arranca como nuevo y sin prioridad (no la que mande el solicitante)')
 check(!!(await fails(U.op, `update mant_ordenes set pedido_id=$1 where id=$2`, [pedAjeno.id, otOp])), 'el operario no puede colgar su OT de un pedido ajeno')
 check(!!(await fails(U.op, `update mant_ordenes set tarea_id=$1 where id=$2`, [tarea, otOp])), 'ni cambiarle la tarea preventiva')
 check(!!(await fails(U.op, `update mant_ordenes set completada_en=now() where id=$1`, [otOp])), 'ni setear la fecha de cierre a mano')
@@ -173,7 +173,8 @@ check(ind.length >= 1, 'indicadores por semana: ' + JSON.stringify(ind))
 console.log('Tickets (forma del panel)')
 const tk = (await as(U.sol, `insert into mant_pedidos (equipo_id,area,descripcion,urgencia_reportada,fecha_reporte) values ($1,'MOLINO TRIGO','Ruido en el reductor','alta',current_date-3) returning id`, [eq])).rows[0].id
 let vt = (await as(U.sol, `select * from mant_v_pedidos where id=$1`, [tk])).rows[0]
-check(vt.prioridad === 'alta' && vt.equipo_detenido === true && vt.titulo === 'Ruido en el reductor' && vt.recursos === 'sinmateriales' && vt.dias_abierto === 3, 'la urgencia reportada fija la prioridad inicial, título y días abiertos')
+check(vt.prioridad === null && vt.urgencia_reportada === 'alta' && vt.equipo_detenido === true && vt.titulo === 'Ruido en el reductor' && vt.recursos === 'sinmateriales' && vt.dias_abierto === 3, 'llega sin prioridad, con equipo parado, título y días abiertos')
+await as(U.ref, `update mant_pedidos set prioridad='alta' where id=$1`, [tk])
 check(!!(await fails(U.sol, `select mant_cambiar_fecha_cierre($1, current_date+7)`, [tk])), 'el solicitante no define fecha de cierre')
 await as(U.ref, `select mant_cambiar_fecha_cierre($1, current_date+7)`, [tk])
 check(!!(await fails(U.ref, `select mant_cambiar_fecha_cierre($1, current_date+15)`, [tk])), 'cambiar la fecha sin motivo falla')
@@ -203,6 +204,46 @@ check((await as(U.ref, `select prioridad from mant_ordenes where id=$1`, [otk]))
 check((await as(U.op2, `select count(*)::int n from mant_pedidos where id=$1`, [tk])).rows[0].n === 1, 'el personal asignado ve el ticket')
 await as(U.ref, `select mant_estado_pedido($1, 'pendiente')`, [tk])
 check((await as(U.sol, `select estado from mant_v_pedidos where id=$1`, [tk])).rows[0].estado === 'nuevo' && (await as(U.ref, `select estado from mant_ordenes where id=$1`, [otk])).rows[0].estado === 'cancelada', 'volver a "pendiente" cancela la OT')
+
+console.log('Plataforma (forma de la demo)')
+// pgcrypto / auth.identities no están en el Postgres de prueba: el ingreso se prueba con una clave cargada a mano
+await as(null, `update mant_usuarios set legajo='1042', dni='30512884', turno='mañana' where id=$1`, [U.op])
+await as(null, `insert into mant_usuarios_planta (id, clave) values ($1, 'secreta') on conflict do nothing`, [U.op])
+let ing = (await as(null, `select * from mant_ingreso_planta('1042')`)).rows[0]
+check(ing && ing.clave === 'secreta' && ing.email === 'op@rossi.com', 'con el legajo se obtiene el acceso de planta')
+check((await as(null, `select * from mant_ingreso_planta('30.512.884')`)).rows.length === 1, 'también con el DNI (con puntos)')
+check((await as(null, `select * from mant_ingreso_planta('9999')`)).rows.length === 0, 'un legajo inexistente no entra')
+check(!!(await fails(U.op, `select * from mant_usuarios_planta`)), 'la clave interna no se puede leer desde la app')
+const pd = (await as(U.sol, `insert into mant_pedidos (equipo_id, descripcion, urgencia_reportada, nombre_contacto, email_contacto) values ($1,'Portón chocado','baja','Martín','martin@rossi.com') returning *`, [eq])).rows[0]
+check(pd.prioridad === null && pd.estado === 'nuevo' && pd.equipo_detenido === false && pd.email_contacto === 'martin@rossi.com', 'el pedido llega sin prioridad, con el estado del equipo y el contacto')
+check(!!(await fails(U.op, `select mant_convertir_pedido($1,'media',current_date+3,1,$2)`, [pd.id, U.op])), 'un operario no convierte pedidos')
+check(!!(await fails(U.ref, `select mant_convertir_pedido($1,'media',null,1,$2)`, [pd.id, U.op])), 'sin plazo no se convierte')
+const otd = (await as(U.ref, `select mant_convertir_pedido($1,'media',current_date+3,0.5,$2,current_date,'Llevar guía de 3 m') o`, [pd.id, U.op])).rows[0].o
+const od = (await as(U.ref, `select * from mant_v_ordenes where id=$1`, [otd])).rows[0]
+check(od.asignado_id === U.op && Number(od.duracion_estimada_horas) === 4 && od.observacion === 'Llevar guía de 3 m' && od.prioridad === 'media' && od.turno === 'mañana', 'convertir crea la OT asignada, con duración, turno y observación')
+let vpd = (await as(U.sol, `select * from mant_v_pedidos where id=$1`, [pd.id])).rows[0]
+check(vpd.estado === "en_ot" && String(vpd.fecha_comprometida) === String(vpd.fecha_cierre_estimada) && vpd.fecha_cierre_estimada !== null && Number(vpd.comentarios) === 1, 'el solicitante ve la fecha comprometida y el aviso de asignación')
+check(!!(await fails(U.ref, `select mant_convertir_pedido($1,'media',current_date+3,1,$2)`, [pd.id, U.op])), 'no se convierte dos veces')
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo) values ($1,'x/cierre.jpg','cierre')`, [otd])
+await as(U.op, `update mant_ordenes set estado='completada' where id=$1`, [otd])
+let oc = (await as(U.ref, `select estado, revision_foto from mant_ordenes where id=$1`, [otd])).rows[0]
+check(oc.estado === 'completada' && oc.revision_foto === 'pendiente', 'al cerrar, la foto queda para revisar')
+check((await as(U.sol, `select count(*)::int n from mant_pedido_comentarios where pedido_id=$1 and texto like 'Trabajo terminado%'`, [pd.id])).rows[0].n === 1, 'el solicitante recibe el aviso de trabajo terminado')
+check(!!(await fails(U.op, `select mant_revisar_foto($1,'aprobada')`, [otd])), 'el operario no revisa fotos')
+await as(U.ref, `select mant_revisar_foto($1,'rehacer','La guía quedó floja')`, [otd])
+oc = (await as(U.ref, `select estado, revision_foto, observacion from mant_ordenes where id=$1`, [otd])).rows[0]
+check(oc.estado === 'en_proceso' && oc.revision_foto === 'rehacer' && oc.observacion.includes('La guía quedó floja') && (await as(U.sol, `select estado from mant_pedidos where id=$1`, [pd.id])).rows[0].estado === 'en_ot', 'pedir rehacer reabre la OT y el pedido')
+check(!!(await fails(U.op, `update mant_ordenes set estado='completada' where id=$1`, [otd])), 'sin una foto nueva no se vuelve a cerrar')
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo) values ($1,'x/cierre2.jpg','cierre')`, [otd])
+await as(U.op, `update mant_ordenes set estado='completada' where id=$1`, [otd])
+await as(U.ref, `select mant_revisar_foto($1,'aprobada')`, [otd])
+check((await as(U.ref, `select revision_foto from mant_ordenes where id=$1`, [otd])).rows[0].revision_foto === 'aprobada', 'con la foto nueva se cierra y se aprueba')
+const artp = (await as(U.ref, `insert into mant_articulos (codigo, descripcion, stock_actual, stock_minimo, costo_unit_usd) values ('SELLO-ROOT','Sello mecánico bomba root',0,1,350) returning id`)).rows[0].id
+await as(U.ref, `insert into mant_equipo_repuestos (equipo_id, articulo_id) values ($1,$2)`, [eq, artp])
+const cp = (await as(U.pan, `select mant_pedir_presupuesto($1) c`, [artp])).rows[0].c
+const cpr = (await as(U.ref, `select * from mant_compras where id=$1`, [cp])).rows[0]
+check(cpr.estado === 'pendiente' && cpr.planta_id === pl && Number(cpr.monto) === 700, 'pedir presupuesto crea la compra pendiente con su centro de costo')
+check(!!(await fails(U.pan, `select mant_pedir_presupuesto($1)`, [artp])), 'no se duplica el pedido de un repuesto en curso')
 
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)

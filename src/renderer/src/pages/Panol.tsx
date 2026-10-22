@@ -5,21 +5,23 @@ import { useSesion } from '@/lib/sesion'
 import { useProveedores } from '@/lib/catalogos'
 import { fmtFechaHora, fmtNum, numOT, useDatos } from '@/lib/util'
 import type { Articulo } from '@/lib/tipos'
-import { Boton, Campo, Cargando, ErrorBox, Insignia, Modal, Pagina, Pestanas, Tarjeta, Vacio, useAviso } from '@/components/ui'
+import { Boton, Campo, Cargando, ErrorBox, Insignia, Modal, OkBox, Pagina, Pestanas, Tarjeta, Vacio, useAviso } from '@/components/ui'
+import { numCompra } from '@/lib/util'
 import { SelectorArticulo } from '@/components/selectores'
 
-type Vista = 'catalogo' | 'movimientos' | 'vincular'
+type Vista = 'alertas' | 'catalogo' | 'movimientos' | 'vincular'
 
 export function Panol() {
   const [params] = useSearchParams()
-  const [vista, setVista] = useState<Vista>('catalogo')
+  const [vista, setVista] = useState<Vista>(params.get('bajo') ? 'catalogo' : 'alertas')
   const { data: sinVincular, recargar } = useDatos(async () => {
     const r = await supabase.from('mant_ot_repuestos').select('id', { count: 'exact', head: true }).is('articulo_id', null)
     return { data: r.count ?? 0, error: r.error }
   })
   return (
-    <Pagina titulo="Pañol" subtitulo="Catálogo de repuestos, stock y movimientos.">
-      <Pestanas valor={vista} onCambio={setVista} opciones={[['catalogo', 'Catálogo y stock'], ['movimientos', 'Movimientos'], ['vincular', 'Repuestos sin vincular', sinVincular ?? 0]]} />
+    <Pagina kicker="Módulo 3 · Pañol" titulo="Pañol de repuestos"
+      acciones={<Pestanas valor={vista} onCambio={setVista} opciones={[['alertas', 'Alertas'], ['movimientos', 'Registro de movimientos'], ['catalogo', 'Listado de repuestos'], ['vincular', 'Sin vincular', sinVincular ?? 0]]} />}>
+      {vista === 'alertas' && <Alertas />}
       {vista === 'catalogo' && <Catalogo soloBajo={!!params.get('bajo')} />}
       {vista === 'movimientos' && <Movimientos />}
       {vista === 'vincular' && <SinVincular onCambio={() => void recargar()} />}
@@ -341,6 +343,96 @@ function SinVincular({ onCambio }: { onCambio: () => void }) {
           ))}
         </div>
       )}
+    </>
+  )
+}
+
+// ---------------------------------------------------------------------
+// Alertas: repuestos sin stock o bajo mínimo, por gravedad, con "Pedir presupuesto"
+// ---------------------------------------------------------------------
+type Alerta = Articulo & { eq?: { codigo: string; nombre: string; clasificacion: string }; pedido?: number; nivel: 'critica' | 'bajo' | 'minimo' }
+const NIVEL = {
+  critica: { titulo: 'Críticas', desc: 'Sin stock o repuesto de equipo crítico', caja: 'border-[#f3c4c6] bg-rojo-claro', num: 'text-primario-oscuro', cab: 'bg-rojo-claro', pill: 'bg-primario text-white', etiqueta: 'Crítica', barra: '#cc1a20', borde: 'border-[#f3c4c6]' },
+  bajo: { titulo: 'Bajo mínimo', desc: 'Por debajo del mínimo', caja: 'border-[#f1d49a] bg-ambar-claro', num: 'text-pendiente', cab: 'bg-ambar-claro', pill: 'bg-ambar text-white', etiqueta: 'Alta', barra: '#d9a21b', borde: 'border-[#f1d49a]' },
+  minimo: { titulo: 'En el mínimo', desc: 'Llegan al mínimo con el próximo uso', caja: 'border-[#c9d6ee] bg-azul-claro', num: 'text-revision', cab: 'bg-azul-claro', pill: 'bg-azul text-white', etiqueta: 'Atención', barra: '#5b84c4', borde: 'border-[#c9d6ee]' }
+} as const
+
+function Alertas() {
+  const avisar = useAviso()
+  const { puede } = useSesion()
+  const [pidiendo, setPidiendo] = useState<string | null>(null)
+  const { data, cargando, error, recargar } = useDatos(async () => {
+    const st = await supabase.from('mant_v_stock').select('*').eq('activo', true).eq('bajo_minimo', true).gt('stock_minimo', 0).order('stock_actual').limit(600)
+    const arts = (st.data ?? []) as Articulo[]
+    const ids = arts.map((a) => a.id)
+    const [rel, it] = ids.length ? await Promise.all([
+      supabase.from('mant_equipo_repuestos').select('articulo_id,equipo_id').in('articulo_id', ids),
+      supabase.from('mant_compra_items').select('articulo_id,compra:mant_compras(numero,estado)').in('articulo_id', ids)
+    ]) : [{ data: [] }, { data: [] }]
+    const rels = (rel.data ?? []) as { articulo_id: string; equipo_id: string }[]
+    const eqIds = [...new Set(rels.map((r) => r.equipo_id))]
+    const eqs = eqIds.length ? await supabase.from('mant_v_equipos').select('id,codigo,nombre,clasificacion').in('id', eqIds) : { data: [] }
+    const eqMap = new Map(((eqs.data ?? []) as { id: string; codigo: string; nombre: string; clasificacion: string }[]).map((e) => [e.id, e]))
+    const orden = { C: 0, MC: 1, NC: 2 } as Record<string, number>
+    const pedidos = new Map<string, number>()
+    for (const x of (it.data ?? []) as unknown as { articulo_id: string; compra: { numero: number; estado: string } | null }[])
+      if (x.compra && ['borrador', 'pendiente', 'aprobada', 'comprada'].includes(x.compra.estado)) pedidos.set(x.articulo_id, x.compra.numero)
+    const alertas: Alerta[] = arts.map((a) => {
+      const eq = rels.filter((r) => r.articulo_id === a.id).map((r) => eqMap.get(r.equipo_id)).filter(Boolean)
+        .sort((x, y) => orden[x!.clasificacion] - orden[y!.clasificacion])[0]
+      const nivel = a.stock_actual <= 0 || (eq?.clasificacion === 'C' && a.stock_actual < a.stock_minimo) ? 'critica' : a.stock_actual < a.stock_minimo ? 'bajo' : 'minimo'
+      return { ...a, eq, pedido: pedidos.get(a.id), nivel }
+    })
+    return { data: alertas, error: st.error }
+  })
+
+  async function pedir(a: Alerta) {
+    setPidiendo(a.id)
+    const { data: c, error } = await supabase.rpc('mant_pedir_presupuesto', { p_articulo: a.id })
+    setPidiendo(null)
+    if (error) avisar(mensajeError(error), 'error')
+    else { avisar('Pedido de presupuesto creado en Compras.'); void recargar(); void c }
+  }
+
+  if (cargando && !data) return <Cargando />
+  if (!data?.length) return <OkBox>No hay repuestos bajo mínimo.</OkBox>
+  const puedePedir = puede('panolero', 'referente', 'supervisor', 'compras')
+  return (
+    <>
+      <ErrorBox texto={error} />
+      <div className="flex flex-wrap items-start gap-4">
+        {(['critica', 'bajo', 'minimo'] as const).map((n) => {
+          const cfg = NIVEL[n], items = data.filter((a) => a.nivel === n)
+          return (
+            <div key={n} className="flex min-w-0 flex-[1_1_280px] flex-col gap-3">
+              <div className={`flex items-center gap-3 rounded-2xl border px-4 py-3.5 ${cfg.caja}`}>
+                <span className={`text-[34px] font-bold leading-none ${cfg.num}`}>{items.length}</span>
+                <span className="flex flex-col gap-0.5"><span className="text-[15px] font-semibold">{cfg.titulo}</span><span className="text-xs text-suave">{cfg.desc}</span></span>
+              </div>
+              {items.length === 0 && <div className="rounded-2xl border-[1.5px] border-dashed border-borde-campo p-4 text-center text-[13px] text-tenue">Sin alertas en este nivel</div>}
+              {items.slice(0, 25).map((a) => {
+                const falta = a.stock_minimo - a.stock_actual
+                const sugerido = Math.max((a.stock_sugerido ?? a.stock_minimo * 2) - a.stock_actual, 1)
+                return (
+                  <div key={a.id} className={`flex flex-col gap-2.5 overflow-hidden rounded-tarjeta border bg-white pb-4 ${cfg.borde}`}>
+                    <div className={`flex items-center justify-between px-4 py-2.5 ${cfg.cab}`}>
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${cfg.pill}`}>{cfg.etiqueta}</span>
+                      {a.eq?.clasificacion === 'C' && <span className="text-xs font-semibold text-primario-oscuro">Equipo crítico</span>}
+                    </div>
+                    <span className="flex flex-col gap-0.5 px-4"><span className="text-base font-semibold">{a.descripcion}</span><span className="text-xs text-tenue">{a.eq ? `${a.eq.nombre} · ${a.eq.codigo}` : a.codigo}</span></span>
+                    <span className="flex items-baseline gap-2 px-4"><span className={`text-[30px] font-bold leading-none ${cfg.num}`}>{fmtNum(a.stock_actual)}</span><span className="text-sm text-suave">en stock · mínimo {fmtNum(a.stock_minimo)}</span></span>
+                    <span className="mx-4 block h-2 overflow-hidden rounded-full bg-linea"><span className="block h-full rounded-full" style={{ width: `${Math.max(4, Math.min(100, (a.stock_actual / a.stock_minimo) * 100))}%`, background: cfg.barra }} /></span>
+                    <span className="px-4 text-[13px] text-texto-2">{a.stock_actual <= 0 ? 'Sin stock' : falta > 0 ? `Faltan ${fmtNum(falta)} para el mínimo` : 'Está justo en el mínimo'} · sugerido pedir {fmtNum(sugerido)}</span>
+                    {a.pedido ? <span className="mx-4 self-start rounded-full bg-azul-claro px-3 py-1.5 text-[13px] font-semibold text-revision">Pedido en curso · {numCompra(a.pedido)}</span>
+                      : puedePedir && <div className="px-4"><Boton className="w-full" cargando={pidiendo === a.id} onClick={() => void pedir(a)}>Pedir presupuesto</Boton></div>}
+                  </div>
+                )
+              })}
+              {items.length > 25 && <div className="text-center text-[13px] text-tenue">y {items.length - 25} más · ver el Listado de repuestos</div>}
+            </div>
+          )
+        })}
+      </div>
     </>
   )
 }

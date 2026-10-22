@@ -4,66 +4,133 @@ import { mensajeError, supabase } from '@/lib/supabase'
 import { useSesion } from '@/lib/sesion'
 import { useProveedores } from '@/lib/catalogos'
 import { fmtFecha, fmtFechaHora, fmtNum, numCompra, numOT, subirArchivo, urlFirmada, useDatos } from '@/lib/util'
-import type { Compra, EstadoCompra } from '@/lib/tipos'
-import { Boton, Campo, Cargando, ErrorBox, InsEstadoCompra, Modal, Pagina, Pestanas, Tarjeta, Vacio, useAviso } from '@/components/ui'
+import type { Compra } from '@/lib/tipos'
+import { Boton, Campo, Cargando, ErrorBox, Insignia, InsEstadoCompra, Modal, Pagina, Pestanas, Tarjeta, Vacio, useAviso } from '@/components/ui'
 import { BotonFoto, SelectorArticulo } from '@/components/selectores'
 
 type CompraV = Compra & { orden: { id: string; numero: number; titulo: string } | null; solicitante: { nombre: string } | null; decisor: { nombre: string } | null }
 interface Item { id?: string; articulo_id: string | null; codigo?: string; descripcion: string; cantidad: number; precio_unit: number | null }
-type Vista = 'activas' | 'todas' | 'gasto'
+type Filtro = 'todas' | 'preventivo'
+const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+const MESES_L = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+const k = (n: number) => n >= 1000 ? `${fmtNum(n / 1000, 1)} k` : fmtNum(n)
 
 export function Compras() {
   const [params] = useSearchParams()
-  const { puede } = useSesion()
-  const [vista, setVista] = useState<Vista>('activas')
-  const [estado, setEstado] = useState<'' | EstadoCompra>('')
+  const avisar = useAviso()
+  const { puede, usuario } = useSesion()
+  const [filtro, setFiltro] = useState<Filtro>('todas')
   const [abierta, setAbierta] = useState<string | 'nueva' | null>(params.get('orden') || params.get('preventivo') ? 'nueva' : null)
   const puedeCrear = puede('referente', 'supervisor', 'panolero', 'compras')
 
   const { data, cargando, error, recargar } = useDatos(async () => {
-    let q = supabase.from('mant_compras').select('*, orden:mant_ordenes(id, numero, titulo), solicitante:mant_usuarios!mant_compras_solicitado_por_fkey(nombre), decisor:mant_usuarios!mant_compras_decidido_por_fkey(nombre)')
-      .order('creado_en', { ascending: false }).limit(300)
-    if (vista === 'activas') q = q.in('estado', ['borrador', 'pendiente', 'aprobada', 'comprada'])
-    if (estado) q = q.eq('estado', estado)
-    const r = await q
-    return { data: (r.data ?? []) as unknown as CompraV[], error: r.error }
-  }, [vista, estado])
+    const [c, g, p, r] = await Promise.all([
+      supabase.from('mant_compras').select('*, orden:mant_ordenes(id, numero, titulo), solicitante:mant_usuarios!mant_compras_solicitado_por_fkey(nombre), decisor:mant_usuarios!mant_compras_decidido_por_fkey(nombre)')
+        .order('creado_en', { ascending: false }).limit(300),
+      supabase.from('mant_v_gasto_mensual').select('*').order('mes', { ascending: false }).limit(6),
+      supabase.from('mant_plantas').select('id,nombre').order('nombre'),
+      supabase.from('mant_usuarios').select('id,nombre,limite_aprobacion_usd').eq('rol', 'referente').eq('activo', true).order('limite_aprobacion_usd', { ascending: false }).limit(1)
+    ])
+    return {
+      data: {
+        compras: (c.data ?? []) as unknown as CompraV[],
+        meses: ((g.data ?? []) as { mes: string; total_usd: number | null }[]).reverse(),
+        plantas: (p.data ?? []) as { id: string; nombre: string }[],
+        referente: ((r.data ?? []) as { nombre: string; limite_aprobacion_usd: number }[])[0]
+      },
+      error: c.error
+    }
+  })
+
+  const hoyD = new Date()
+  const delMes = (data?.compras ?? []).filter((c) => ['aprobada', 'comprada', 'recibida'].includes(c.estado) && (c.decidido_en ?? c.creado_en).slice(0, 7) === `${hoyD.getFullYear()}-${String(hoyD.getMonth() + 1).padStart(2, '0')}`)
+  const porCC = (data?.plantas ?? []).map((p) => ({ l: p.nombre, v: delMes.filter((c) => c.planta_id === p.id).reduce((s, c) => s + Number(c.monto_usd ?? 0), 0) }))
+  const sinCC = delMes.filter((c) => !c.planta_id).reduce((s, c) => s + Number(c.monto_usd ?? 0), 0)
+  if (sinCC) porCC.push({ l: 'Sin centro de costo', v: sinCC })
+  porCC.sort((a, b) => b.v - a.v)
+  const maxCC = Math.max(1, ...porCC.map((x) => x.v))
+  const totalMes = delMes.reduce((s, c) => s + Number(c.monto_usd ?? 0), 0)
+  const maxMes = Math.max(1, ...(data?.meses ?? []).map((m) => Number(m.total_usd ?? 0)))
+  const lista = (data?.compras ?? []).filter((c) => filtro === 'todas' || c.tarea_id || (c.comentario ?? '').toLowerCase().includes('preventivo'))
+  const ref = data?.referente
+  const ccNombre = (id?: string | null) => data?.plantas.find((p) => p.id === id)?.nombre ?? '—'
+
+  async function aprobar(c: CompraV) {
+    const { error } = await supabase.rpc('mant_decidir_compra', { p_compra: c.id, p_aprobar: true, p_comentario: null })
+    if (error) avisar(mensajeError(error), 'error'); else { avisar('Compra aprobada.'); void recargar() }
+  }
 
   return (
-    <Pagina titulo="Compras y presupuestos" subtitulo="El referente aprueba hasta su límite; por encima pasa al director."
+    <Pagina kicker="Módulo 3 · Compras" titulo="Compras de mantenimiento"
       acciones={puedeCrear && <Boton onClick={() => setAbierta('nueva')}>+ Nueva compra</Boton>}>
-      <Pestanas valor={vista} onCambio={setVista} opciones={[['activas', 'En curso'], ['todas', 'Todas'], ['gasto', 'Gasto mensual']]} />
-      {vista === 'gasto' ? <Gasto /> : (
-        <>
-          <div className="mb-3 flex gap-2">
-            <select className="campo w-auto" value={estado} onChange={(e) => setEstado(e.target.value as EstadoCompra | '')}>
-              <option value="">Todos los estados</option>
-              {(['borrador', 'pendiente', 'aprobada', 'rechazada', 'comprada', 'recibida'] as const).map((e) => <option key={e} value={e}>{e}</option>)}
-            </select>
-          </div>
-          <ErrorBox texto={error} />
-          {cargando ? <Cargando /> : !data?.length ? <Vacio texto="No hay compras." /> : (
-            <Tarjeta className="overflow-x-auto">
-              <table className="tabla -m-4 w-[calc(100%+2rem)]">
-                <thead><tr><th>N°</th><th>Descripción</th><th>OT</th><th>Proveedor</th><th>Monto</th><th>USD</th><th>Pidió</th><th>Estado</th></tr></thead>
-                <tbody>
-                  {data.map((c) => (
-                    <tr key={c.id} className="cursor-pointer" onClick={() => setAbierta(c.id)}>
-                      <td className="whitespace-nowrap font-bold">{numCompra(c.numero)}</td><td>{c.descripcion}</td>
-                      <td>{c.orden ? numOT(c.orden.numero) : c.tarea_id ? 'Preventivo' : '—'}</td>
-                      <td>{c.proveedor ?? '—'}</td>
-                      <td className="whitespace-nowrap">{c.moneda} {fmtNum(c.monto, 2)}</td>
-                      <td className="whitespace-nowrap">{c.monto_usd != null ? fmtNum(c.monto_usd, 2) : '—'}</td>
-                      <td>{c.solicitante?.nombre ?? '—'}</td>
-                      <td><InsEstadoCompra e={c.estado} /></td>
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5 text-sm text-texto-2">
+        <span className="text-xl font-light"><b className="font-bold">Tablero</b> de gasto</span>
+        <span className="text-suave">Se arma con lo cargado en el listado de abajo: {delMes.length} compras aprobadas este mes · USD {fmtNum(totalMes)} en {MESES_L[hoyD.getMonth()]}.</span>
+      </div>
+      <ErrorBox texto={error} />
+      {cargando && !data ? <Cargando /> : data && <>
+        <div className="flex flex-wrap gap-4">
+          <Tarjeta className="flex min-w-0 flex-[1_1_360px] flex-col gap-3">
+            <h2 className="m-0 text-lg font-semibold">Gasto de {MESES_L[hoyD.getMonth()]} por centro de costo · USD</h2>
+            {porCC.map((b) => (
+              <div key={b.l} className="grid grid-cols-[150px_minmax(0,1fr)_70px] items-center gap-2.5 text-[13px]">
+                <span className="truncate">{b.l}</span>
+                <span className="block h-3.5 overflow-hidden rounded-full bg-fondo"><span className="block h-full rounded-full" style={{ width: `${Math.max(b.v ? 3 : 0, (b.v / maxCC) * 100)}%`, background: b === porCC[0] && b.v ? '#8c8174' : '#8c8174' }} /></span>
+                <span className="text-right font-semibold">{fmtNum(b.v)}</span>
+              </div>
+            ))}
+          </Tarjeta>
+          <Tarjeta className="flex min-w-0 flex-[1_1_360px] flex-col gap-3">
+            <h2 className="m-0 text-lg font-semibold">Gasto total por mes · USD</h2>
+            {!data.meses.length ? <span className="text-sm text-suave">Sin compras aprobadas todavía.</span> : (
+              <div className="grid h-[200px] items-end gap-3" style={{ gridTemplateColumns: `repeat(${data.meses.length}, minmax(0,1fr))` }}>
+                {data.meses.map((m, i) => (
+                  <div key={m.mes} className="flex h-full flex-col items-center justify-end gap-1.5">
+                    <span className="text-xs font-semibold">{k(Number(m.total_usd ?? 0))}</span>
+                    <span className="block w-full max-w-[46px] rounded-t-xl" style={{ height: `${Math.max(2, (Number(m.total_usd ?? 0) / maxMes) * 140)}px`, background: i === data.meses.length - 1 ? '#e31e24' : '#c9bfb1' }} />
+                    <span className="text-xs text-suave">{MESES[Number(m.mes.slice(5, 7)) - 1]}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Tarjeta>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="m-0 text-xl font-light"><b className="font-bold">Listado</b> de compras</h2>
+          <Pestanas valor={filtro} onCambio={setFiltro} opciones={[['todas', 'Todas las compras'], ['preventivo', 'Solo preventivo']]} />
+        </div>
+        {ref && <div className="rounded-2xl border border-borde bg-white px-4 py-3 text-sm text-texto-2">Aprobación por monto: <b>{ref.nombre} hasta USD {fmtNum(ref.limite_aprobacion_usd)}</b> · por encima pasa a <b>Director</b>.</div>}
+        {!lista.length ? <Vacio texto="No hay compras." /> : (
+          <div className="tarjeta overflow-x-auto">
+            <table className="tabla min-w-[1080px]">
+              <thead><tr><th>Pedido</th><th>Detalle</th><th>Centro de costo</th><th>Costo</th><th>Estado</th><th>Docs · llegada</th><th>Acción</th></tr></thead>
+              <tbody>
+                {lista.map((c) => {
+                  const limite = usuario?.rol === 'referente' ? usuario.limite_aprobacion_usd : Infinity
+                  const puedeAprobar = c.estado === 'pendiente' && puede('referente', 'director') && (usuario?.rol !== 'referente' || Number(c.monto_usd ?? 0) <= limite)
+                  return (
+                    <tr key={c.id}>
+                      <td className="whitespace-nowrap text-[13px] font-semibold">{numCompra(c.numero)}</td>
+                      <td><div className="font-medium">{c.descripcion}</div><div className="text-xs text-tenue">{[c.proveedor, c.orden ? numOT(c.orden.numero) : c.tarea_id ? 'Preventivo' : null].filter(Boolean).join(' · ') || '—'}</div></td>
+                      <td className="text-[13px]">{ccNombre(c.planta_id)}</td>
+                      <td className="whitespace-nowrap text-[13px] font-semibold">{c.estado === 'pendiente' || c.estado === 'borrador' ? 'Cotizado ' : ''}{c.moneda === 'USD' ? 'USD' : '$'} {fmtNum(c.monto)}</td>
+                      <td className="w-[170px]"><InsEstadoCompra e={c.estado} ancho /></td>
+                      <td><span className="flex flex-wrap items-center gap-1.5"><span className="text-xs text-suave">{c.adjunto_ruta ? '1 doc' : 'sin docs'}</span>
+                        {c.estado === 'comprada' ? <Insignia t="azul">En camino</Insignia> : c.estado === 'recibida' ? <Insignia t="verde">Llegó</Insignia> : <Insignia>—</Insignia>}</span></td>
+                      <td><span className="flex items-center gap-2">
+                        <Boton chico variante="secundario" onClick={() => setAbierta(c.id)}>Editar</Boton>
+                        {puedeAprobar ? <Boton chico onClick={() => void aprobar(c)}>Aprobar ({usuario?.nombre.split(' ')[0]})</Boton>
+                          : c.estado === 'pendiente' ? <span className="text-[13px] text-suave">Espera al Director</span>
+                          : ['aprobada', 'comprada', 'recibida'].includes(c.estado) ? <span className="text-[13px] text-suave">OC emitida</span> : null}
+                      </span></td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </Tarjeta>
-          )}
-        </>
-      )}
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </>}
       {abierta && <DetalleCompra id={abierta === 'nueva' ? null : abierta} ordenInicial={params.get('orden')} desdePreventivo={!!params.get('preventivo')}
         onCerrar={() => setAbierta(null)} onCambio={() => void recargar()} />}
     </Pagina>
@@ -247,33 +314,5 @@ function ItemLibre({ onAgregar }: { onAgregar: (d: string) => void }) {
       <input className="campo" placeholder="O escribir un ítem / servicio…" value={t} onChange={(e) => setT(e.target.value)} />
       <Boton variante="secundario" disabled={!t.trim()} onClick={() => { onAgregar(t.trim()); setT('') }}>+</Boton>
     </div>
-  )
-}
-
-function Gasto() {
-  const { data, cargando, error } = useDatos(async () => {
-    const r = await supabase.from('mant_v_gasto_mensual').select('*').order('mes', { ascending: false }).limit(24)
-    return { data: (r.data ?? []) as { mes: string; compras: number; total_usd: number | null; total_ars: number | null }[], error: r.error }
-  })
-  const max = Math.max(1, ...(data ?? []).map((m) => Number(m.total_usd ?? 0)))
-  return (
-    <Tarjeta titulo="Gasto de mantenimiento por mes (compras aprobadas)" acciones={<Boton variante="secundario" onClick={() => window.print()}>Imprimir</Boton>}>
-      <ErrorBox texto={error} />
-      {cargando ? <Cargando /> : !data?.length ? <p className="text-sm text-suave">Sin compras aprobadas todavía.</p> : (
-        <table className="tabla -m-4 w-[calc(100%+2rem)]">
-          <thead><tr><th>Mes</th><th>Compras</th><th>Total USD</th><th className="w-1/2"></th><th>Pagado en ARS</th></tr></thead>
-          <tbody>
-            {data.map((m) => (
-              <tr key={m.mes}>
-                <td className="font-bold capitalize">{new Date(m.mes + 'T12:00:00').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })}</td>
-                <td>{m.compras}</td><td className="font-bold">{fmtNum(m.total_usd, 2)}</td>
-                <td><div className="h-3 rounded bg-primario/80" style={{ width: `${(Number(m.total_usd ?? 0) / max) * 100}%` }} /></td>
-                <td className="text-suave">{m.total_ars ? fmtNum(m.total_ars, 2) : '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </Tarjeta>
   )
 }

@@ -71,8 +71,6 @@ if (!app.requestSingleInstanceLock()) {
 
 function buscarActualizaciones() {
   if (!app.isPackaged) return
-  // Canal propio dentro del repositorio compartido con Compras Rossi
-  autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.on('update-downloaded', (info) => ventana?.webContents.send('actualizacion-lista', info.version))
