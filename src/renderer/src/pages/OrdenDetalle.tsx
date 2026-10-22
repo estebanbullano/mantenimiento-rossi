@@ -7,8 +7,9 @@ import { fmtFecha, fmtFechaHora, fmtMin, fmtNum, lunesDe, numOT, numPedido, subi
 import { PRIORIDADES, type Articulo, type Orden, type OtItem, type Prioridad } from '@/lib/tipos'
 import { Boton, Campo, Cargando, ErrorBox, Insignia, InsEstadoOT, InsPrioridad, Modal, Pagina, Tarjeta, useAviso } from '@/components/ui'
 import { BotonFoto, Foto, SelectorArticulo } from '@/components/selectores'
+import { RevisionCierre } from '@/components/RevisionCierre'
 
-interface FotoOT { id: string; ruta: string; tipo: 'antes' | 'cierre'; creado_en: string }
+interface FotoOT { id: string; ruta: string; tipo: 'antes' | 'cierre' | 'paso' | 'rechazada'; creado_en: string }
 interface RepuestoOT { id: string; texto: string; cantidad: number; articulo_id: string | null; articulo?: { codigo: string; descripcion: string; unidad: string } | null }
 
 export function OrdenDetalle() {
@@ -96,6 +97,7 @@ export function OrdenDetalle() {
         {puede('referente', 'supervisor', 'panolero') && <Boton variante="secundario" onClick={() => nav(`/compras?orden=${o.id}`)}>Pedir compra</Boton>}
       </>}>
       <ErrorBox texto={error} />
+      {esMant && <RevisionCierre orden={o} onCambio={() => void recargar()} />}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <Tarjeta titulo="Detalle">
@@ -180,7 +182,7 @@ export function OrdenDetalle() {
                 {data.fotos.map((f) => (
                   <div key={f.id} className="relative">
                     <Foto ruta={f.ruta} className="aspect-square w-full" />
-                    <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] font-bold text-white">{f.tipo === 'antes' ? 'Pedido' : 'Cierre'}</span>
+                    <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] font-bold text-white">{f.tipo === 'antes' ? 'Pedido' : f.tipo === 'paso' ? 'Paso' : f.tipo === 'rechazada' ? 'Rechazada' : 'Cierre'}</span>
                   </div>
                 ))}
               </div>

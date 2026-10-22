@@ -92,7 +92,7 @@ await as(U.op, `update mant_ot_repuestos set cantidad=2 where id=$1`, [rep])
 check((await as(U.pan, `select stock_actual::int s from mant_articulos where id=$1`, [art])).rows[0].s === 3, 'corregir la cantidad ajusta el stock (3)')
 const e1 = await fails(U.op, `update mant_ordenes set estado='completada', tiempo_real_min=200 where id=$1`, [ot.id])
 check(e1 && e1.includes('sin foto'), 'sin foto no se cierra: ' + e1)
-await as(U.op, `insert into mant_ot_fotos (orden_id,ruta,tipo) values ($1,'ot/x.jpg','cierre')`, [ot.id])
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, tomada_en) values ($1,'ot/x.jpg','cierre',true,now())`, [ot.id])
 await as(U.op, `update mant_ordenes set estado='completada', tiempo_real_min=200, comentario_cierre='ok' where id=$1`, [ot.id])
 const t2 = (await as(U.ref, `select ultima_ejecucion::text u, proxima_fecha::text p from mant_tareas where id=$1`, [tarea])).rows[0]
 check(t2.u && t2.p > t2.u, `al cerrar se reprograma: última ${t2.u}, próxima ${t2.p}`)
@@ -109,7 +109,7 @@ const otc = (await as(U.ref, `select mant_resolver_pedido($1,true,'urgente',curr
 check(!!otc, 'el referente lo convierte en OT urgente asignada')
 const vp = (await as(U.sol, `select estado, orden_estado from mant_v_pedidos where id=$1`, [ped])).rows[0]
 check(vp.estado === 'en_ot' && vp.orden_estado === 'pendiente', 'el solicitante sigue el estado: ' + JSON.stringify(vp))
-await as(U.op, `insert into mant_ot_fotos (orden_id,ruta) values ($1,'ot/y.jpg')`, [otc])
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, tomada_en) values ($1,'ot/y.jpg','cierre',true,now())`, [otc])
 await as(U.op, `update mant_ordenes set estado='completada', tiempo_real_min=45 where id=$1`, [otc])
 check((await as(U.sol, `select estado from mant_pedidos where id=$1`, [ped])).rows[0].estado === 'cerrado', 'al cerrar la OT se cierra el pedido')
 
@@ -144,7 +144,7 @@ await as(U.op, `insert into mant_ot_repuestos (orden_id, texto, cantidad, articu
 const s1 = Number((await as(U.pan, `select stock_actual from mant_articulos where id=$1`, [art])).rows[0].stock_actual)
 check(s0 - s1 === 3, `movimiento_id del cliente se ignora: el stock igual se descuenta (${s0} → ${s1})`)
 check(!!(await fails(U.pan, `insert into mant_movimientos (articulo_id,tipo,cantidad) values ($1,'salida',-5)`, [art])), 'una salida negativa se rechaza')
-await as(U.op, `insert into mant_ot_fotos (orden_id, ruta) values ($1,'x.jpg')`, [otOp])
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, tomada_en) values ($1,'x.jpg','cierre',true,now())`, [otOp])
 await as(U.op, `update mant_ordenes set estado='completada', tiempo_real_min=10 where id=$1`, [otOp])
 await as(U.op, `delete from mant_ot_fotos where orden_id=$1`, [otOp])
 check((await as(U.ref, `select count(*)::int n from mant_ot_fotos where orden_id=$1`, [otOp])).rows[0].n === 1, 'cerrada la OT, el operario no borra la foto')
@@ -224,7 +224,7 @@ check(od.asignado_id === U.op && Number(od.duracion_estimada_horas) === 4 && od.
 let vpd = (await as(U.sol, `select * from mant_v_pedidos where id=$1`, [pd.id])).rows[0]
 check(vpd.estado === "en_ot" && String(vpd.fecha_comprometida) === String(vpd.fecha_cierre_estimada) && vpd.fecha_cierre_estimada !== null && Number(vpd.comentarios) === 1, 'el solicitante ve la fecha comprometida y el aviso de asignación')
 check(!!(await fails(U.ref, `select mant_convertir_pedido($1,'media',current_date+3,1,$2)`, [pd.id, U.op])), 'no se convierte dos veces')
-await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo) values ($1,'x/cierre.jpg','cierre')`, [otd])
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, tomada_en) values ($1,'x/cierre.jpg','cierre',true,now())`, [otd])
 await as(U.op, `update mant_ordenes set estado='completada' where id=$1`, [otd])
 let oc = (await as(U.ref, `select estado, revision_foto from mant_ordenes where id=$1`, [otd])).rows[0]
 check(oc.estado === 'completada' && oc.revision_foto === 'pendiente', 'al cerrar, la foto queda para revisar')
@@ -234,7 +234,7 @@ await as(U.ref, `select mant_revisar_foto($1,'rehacer','La guía quedó floja')`
 oc = (await as(U.ref, `select estado, revision_foto, observacion from mant_ordenes where id=$1`, [otd])).rows[0]
 check(oc.estado === 'en_proceso' && oc.revision_foto === 'rehacer' && oc.observacion.includes('La guía quedó floja') && (await as(U.sol, `select estado from mant_pedidos where id=$1`, [pd.id])).rows[0].estado === 'en_ot', 'pedir rehacer reabre la OT y el pedido')
 check(!!(await fails(U.op, `update mant_ordenes set estado='completada' where id=$1`, [otd])), 'sin una foto nueva no se vuelve a cerrar')
-await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo) values ($1,'x/cierre2.jpg','cierre')`, [otd])
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, tomada_en) values ($1,'x/cierre2.jpg','cierre',true,now())`, [otd])
 await as(U.op, `update mant_ordenes set estado='completada' where id=$1`, [otd])
 await as(U.ref, `select mant_revisar_foto($1,'aprobada')`, [otd])
 check((await as(U.ref, `select revision_foto from mant_ordenes where id=$1`, [otd])).rows[0].revision_foto === 'aprobada', 'con la foto nueva se cierra y se aprueba')
@@ -244,6 +244,43 @@ const cp = (await as(U.pan, `select mant_pedir_presupuesto($1) c`, [artp])).rows
 const cpr = (await as(U.ref, `select * from mant_compras where id=$1`, [cp])).rows[0]
 check(cpr.estado === 'pendiente' && cpr.planta_id === pl && Number(cpr.monto) === 700, 'pedir presupuesto crea la compra pendiente con su centro de costo')
 check(!!(await fails(U.pan, `select mant_pedir_presupuesto($1)`, [artp])), 'no se duplica el pedido de un repuesto en curso')
+
+console.log('Ejecución en el celular (0005)')
+const tar = (await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha) values ($1,'Cambio de rodamiento',4,'semanas',current_date) returning id`, [eq])).rows[0].id
+const ox = (await as(U.ref, `insert into mant_ordenes (tipo, titulo, equipo_id, tarea_id, asignado_id, estado) values ('preventiva','Cambio de rodamiento',$1,$2,$3,'pendiente') returning id`, [eq, tar, U.op])).rows[0].id
+check(!!(await fails(U.op, `select mant_ot_terminar($1)`, [ox])), 'no se termina sin iniciar la actividad')
+check(!!(await fails(U.op2, `select mant_ot_marcar($1,'inicio')`, [ox])), 'otro operario no inicia una tarea ajena')
+let rel = (await as(U.op, `select mant_ot_marcar($1,'inicio') r`, [ox])).rows[0].r
+check(rel.reloj === 'corriendo' && (await as(U.op, `select estado from mant_ordenes where id=$1`, [ox])).rows[0].estado === 'en_proceso', 'iniciar pone la OT en proceso y el cronómetro corriendo')
+check(!!(await fails(U.op, `select mant_ot_marcar($1,'inicio')`, [ox])), 'no se inicia dos veces')
+// simular 40 min de trabajo, 10 de pausa y 20 más
+await as(null, `update mant_ot_eventos set creado_en = now() - interval '70 minutes' where orden_id=$1`, [ox])
+await as(U.op, `select mant_ot_marcar($1,'pausa')`, [ox])
+await as(null, `update mant_ot_eventos set creado_en = now() - interval '30 minutes' where orden_id=$1 and tipo='pausa'`, [ox])
+await as(U.op, `select mant_ot_marcar($1,'reanudar')`, [ox])
+await as(null, `update mant_ot_eventos set creado_en = now() - interval '20 minutes' where orden_id=$1 and tipo='reanudar'`, [ox])
+check((await as(U.op, `select mant_ot_minutos($1) m`, [ox])).rows[0].m === 60, 'el tiempo real descuenta las pausas (40 + 20 = 60 min)')
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, nota, desde_camara, tomada_en) values ($1,'p1.jpg','paso','Aflojar la tapa',true,now())`, [ox])
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, nota, desde_camara, tomada_en) values ($1,'p2.jpg','paso','Sacar el rodamiento',true,now())`, [ox])
+check((await as(U.op, `select array_agg(paso order by paso) p from mant_ot_fotos where orden_id=$1 and tipo='paso'`, [ox])).rows[0].p.join() === '1,2', 'las fotos del trabajo se numeran como pasos')
+check(!!(await fails(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo) values ($1,'galeria.jpg','cierre')`, [ox])), 'la foto final no se puede subir de la galería')
+check(!!(await fails(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, tomada_en) values ($1,'vieja.jpg','cierre',true,now() - interval '2 hours')`, [ox])), 'una foto final vieja se rechaza')
+await as(U.op, `insert into mant_ot_herramientas (orden_id, texto) values ($1,'Llave de 19'),($1,'  llave DE 19 '),($1,'Extractor de rodamientos')`, [ox])
+check((await as(U.op, `select count(*)::int n from mant_herramientas`)).rows[0].n === 2, 'las herramientas arman su catálogo sin duplicar')
+await as(U.op, `insert into mant_ot_repuestos (orden_id, texto, cantidad) values ($1,'rodamiento 6205',2)`, [ox])
+await as(U.op, `insert into mant_ot_medios (orden_id, tipo, ruta, transcripcion) values ($1,'audio','a.webm','Cambié el rodamiento lado acople')`, [ox])
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, tomada_en) values ($1,'cierre.jpg','cierre',true,now())`, [ox])
+const mins = (await as(U.op, `select mant_ot_terminar($1,'Cambié el rodamiento lado acople') m`, [ox])).rows[0].m
+const oxr = (await as(U.ref, `select estado, tiempo_real_min, comentario_cierre from mant_ordenes where id=$1`, [ox])).rows[0]
+check(mins >= 60 && mins <= 61 && oxr.estado === 'completada' && oxr.tiempo_real_min === mins && oxr.comentario_cierre.includes('rodamiento'), 'terminar cierra la OT con el tiempo del cronómetro y el informe')
+const rod = (await as(U.ref, `insert into mant_articulos (codigo, descripcion, stock_actual, stock_minimo) values ('ROD-6205-T','Rodamiento 6205 (prueba)',10,2) returning id`)).rows[0].id
+await as(U.ref, `update mant_ot_repuestos set articulo_id=$1 where orden_id=$2`, [rod, ox])
+const apr = (await as(U.ref, `select mant_aprender_de_ot($1) r`, [ox])).rows[0].r
+check(apr.pasos === 2 && apr.repuestos === 1 && apr.herramientas === 2 && Number(apr.horas) === 1, 'guardar como referencia arma el procedimiento, los repuestos, las herramientas y el tiempo')
+check((await as(U.op2, `select count(*)::int n from mant_tarea_pasos where tarea_id=$1`, [tar])).rows[0].n === 2, 'cualquier operario ve el procedimiento de la tarea')
+const pr = (await as(U.ref, `select * from mant_v_tarea_prediccion where tarea_id=$1`, [tar])).rows[0]
+check(Number(pr.ejecuciones) === 1 && pr.minutos_promedio === mins, 'la predicción de tiempo sale de las veces que se hizo')
+check(!!(await fails(U.op, `select mant_aprender_de_ot($1)`, [ox])), 'el operario no guarda referencias')
 
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)

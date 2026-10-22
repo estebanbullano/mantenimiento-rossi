@@ -137,3 +137,31 @@ export async function urlFirmada(ruta: string) {
 /** Convierte un texto a código (mayúsculas, guiones) */
 export const aCodigo = (s: string) =>
   s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+/** Foto final: la achica y le imprime abajo fecha y hora del celular, OT, persona y equipo */
+export async function estamparFoto(archivo: File, lineas: string[], lado = 1600): Promise<File> {
+  const bitmap = await createImageBitmap(archivo)
+  const escala = Math.min(1, lado / Math.max(bitmap.width, bitmap.height))
+  const w = Math.round(bitmap.width * escala), h = Math.round(bitmap.height * escala)
+  const canvas = document.createElement('canvas')
+  canvas.width = w; canvas.height = h
+  const ctx = canvas.getContext('2d')!
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  const fs = Math.max(16, Math.round(w / 34))
+  const alto = Math.round(fs * 1.45 * lineas.length + fs * 0.8)
+  ctx.fillStyle = 'rgba(0,0,0,0.62)'
+  ctx.fillRect(0, h - alto, w, alto)
+  ctx.fillStyle = '#ffffff'
+  ctx.textBaseline = 'top'
+  lineas.forEach((l, i) => {
+    ctx.font = `${i === 0 ? 'bold ' : ''}${fs}px sans-serif`
+    ctx.fillText(l, Math.round(fs * 0.6), h - alto + Math.round(fs * 0.4) + i * Math.round(fs * 1.45), w - fs)
+  })
+  const blob: Blob = await new Promise((ok) => canvas.toBlob((b) => ok(b!), 'image/jpeg', 0.8))
+  return new File([blob], 'foto-final.jpg', { type: 'image/jpeg', lastModified: archivo.lastModified })
+}
+
+export const fmtReloj = (seg: number) => {
+  const s = Math.max(0, Math.floor(seg))
+  return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}

@@ -3,11 +3,12 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { mensajeError, supabase } from '@/lib/supabase'
 import { useSesion } from '@/lib/sesion'
 import { TURNOS, useOperarios, usePlantas } from '@/lib/catalogos'
-import { fmtFecha, fmtFechaHora, fmtFrecuencia, fmtMin, fmtNum, hoy, numOT, useDatos } from '@/lib/util'
+import { fmtFecha, fmtFechaHora, fmtFrecuencia, fmtMin, fmtNum, hoy, useDatos } from '@/lib/util'
 import { UNIDADES, type Articulo, type Equipo, type Orden, type Tarea, type TareaItem, type Unidad } from '@/lib/tipos'
-import { Boton, Campo, Cargando, ErrorBox, InsCriticidad, InsEstadoOT, Modal, Pagina, Tarjeta, useAviso } from '@/components/ui'
+import { Boton, Campo, Cargando, ErrorBox, InsCriticidad, Modal, Pagina, Tarjeta, useAviso } from '@/components/ui'
 import { SelectorArticulo } from '@/components/selectores'
 import { FormEquipo } from './Equipos'
+import { HistorialEquipo } from '@/components/HistorialEquipo'
 
 type RepRef = { articulo_id: string; cantidad_ref: number; articulo: { codigo: string; descripcion: string; stock_actual: number; unidad: string } }
 type Hist = { id: string; valor_anterior: number; unidad_anterior: Unidad; valor_nuevo: number; unidad_nueva: Unidad; motivo: string | null; creado_en: string; tarea_id: string }
@@ -30,7 +31,7 @@ export function EquipoDetalle() {
       supabase.from('mant_v_equipos').select('*').eq('id', id!).maybeSingle(),
       supabase.from('mant_equipo_repuestos').select('articulo_id, cantidad_ref, articulo:mant_articulos(codigo, descripcion, stock_actual, unidad)').eq('equipo_id', id!),
       supabase.from('mant_tareas').select('*').eq('equipo_id', id!).order('proxima_fecha'),
-      supabase.from('mant_v_ordenes').select('*').eq('equipo_id', id!).order('creado_en', { ascending: false }).limit(50),
+      supabase.from('mant_v_ordenes').select('*').eq('equipo_id', id!).order('creado_en', { ascending: false }).limit(300),
       supabase.from('mant_tareas_historial').select('*, tarea:mant_tareas!inner(equipo_id)').eq('tarea.equipo_id', id!).order('creado_en', { ascending: false }),
       supabase.from('mant_tarea_items').select('*, tarea:mant_tareas!inner(equipo_id)').eq('tarea.equipo_id', id!).order('orden'),
       supabase.from('mant_tarea_repuestos').select('tarea_id, articulo_id, cantidad, articulo:mant_articulos(codigo, descripcion), tarea:mant_tareas!inner(equipo_id)').eq('tarea.equipo_id', id!)
@@ -162,21 +163,7 @@ export function EquipoDetalle() {
           )}
         </Tarjeta>
 
-        <Tarjeta titulo={`Historial de órdenes (${data.ordenes.length})`} className="lg:col-span-2">
-          {!data.ordenes.length ? <p className="text-sm text-suave">Sin órdenes todavía.</p> : (
-            <table className="tabla -m-4 w-[calc(100%+2rem)]">
-              <thead><tr><th>OT</th><th>Tipo</th><th>Tarea</th><th>Responsable</th><th>Cierre</th><th>Tiempo</th><th>Estado</th></tr></thead>
-              <tbody>
-                {data.ordenes.map((o) => (
-                  <tr key={o.id} className="cursor-pointer" onClick={() => nav(`/ordenes/${o.id}`)}>
-                    <td className="whitespace-nowrap font-bold">{numOT(o.numero)}</td><td>{o.tipo === 'preventiva' ? 'Prev.' : 'Corr.'}</td><td>{o.titulo}</td>
-                    <td>{o.asignado_nombre ?? '—'}</td><td>{fmtFechaHora(o.completada_en)}</td><td>{fmtMin(o.tiempo_real_min)}</td><td><InsEstadoOT e={o.estado} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </Tarjeta>
+        <HistorialEquipo ordenes={data.ordenes} />
       </div>
 
       {editar && <FormEquipo equipo={e} plantas={pl?.plantas ?? []} sectores={pl?.sectores ?? []} onCerrar={() => setEditar(false)} onListo={() => { setEditar(false); void recargar() }} />}
