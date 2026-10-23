@@ -82,7 +82,18 @@ function Agenda({ d, lunes, esMant, onCambio, acciones }: { d: Datos; lunes: str
   const pct = dPrev + dCorr ? Math.round((dPrev / (dPrev + dCorr)) * 100) : 0
 
   async function mover(id: string, asignado: string | null, dia: string) {
-    const { error } = await supabase.from('mant_ordenes').update({ asignado_id: asignado || null, fecha_programada: dia, semana: lunesDe(dia) }).eq('id', id)
+    const o = d.ots.find((x) => x.id === id)
+    const cambios: Record<string, unknown> = { asignado_id: asignado || null, fecha_programada: dia, semana: lunesDe(dia) }
+    // si la pasa más allá del plazo, el plazo acompaña
+    if (o?.fecha_comprometida && dia > o.fecha_comprometida) cambios.fecha_comprometida = dia
+    const { error } = await supabase.from('mant_ordenes').update(cambios).eq('id', id)
+    if (error) return avisar(mensajeError(error), 'error')
+    if (dia < lunes || dia > sumarDias(lunes, 6)) avisar(`OT movida al ${DIAS[deISO(dia).getDay()].toLowerCase()} ${fmtFecha(dia)}${o?.pedido_id ? ' · el solicitante ya ve la nueva fecha' : ''}. Pasá a esa semana para verla.`)
+    else if (o?.pedido_id && o.fecha_programada !== dia) avisar('Movida · el solicitante ya ve la nueva fecha.')
+    onCambio()
+  }
+  async function prioridad(id: string, p: Prioridad) {
+    const { error } = await supabase.from('mant_ordenes').update({ prioridad: p }).eq('id', id)
     if (error) avisar(mensajeError(error), 'error'); else onCambio()
   }
   const soltar = (e: DragEvent, asignado: string, dia: string) => {
@@ -96,7 +107,7 @@ function Agenda({ d, lunes, esMant, onCambio, acciones }: { d: Datos; lunes: str
     <>
       <div className="flex flex-wrap gap-4">
         <div className="flex flex-[2_1_380px] flex-col gap-2.5 rounded-2xl border border-borde bg-white px-4 py-3.5 text-sm">
-          {esMant && <span className="rounded-xl bg-rojo-suave px-3 py-2 text-[13px] text-[#8e0f14]"><b>Arrastrá y soltá</b> una OT pendiente en otra celda, o usá los selectores de cada tarjeta, para cambiar quién la hace o qué día.</span>}
+          {esMant && <span className="rounded-xl bg-rojo-suave px-3 py-2 text-[13px] text-[#8e0f14]"><b>Arrastrá y soltá</b> una OT pendiente en otra celda, o usá los controles de cada tarjeta: operario, <b>fecha (cualquier semana)</b>, <b>+1 sem</b> y prioridad. Si la OT viene de un pedido, el solicitante ve el cambio.</span>}
           <span><b>Las preventivas se programan en "Programar preventivo".</b> <span className="text-suave">{prev.length} preventivas desde el plan + {corr.length} correctivas desde pedidos · {d.ots.length} OT en total</span></span>
           <div className="flex flex-wrap items-center gap-1.5"><span className="mr-1 text-[13px] text-suave">Ver operario</span>
             {['Todos', ...filas.map((f) => f.nombre)].map((n) => <Chip key={n} activo={filtro === n} onClick={() => setFiltro(n)}>{n}</Chip>)}
@@ -149,7 +160,7 @@ function Agenda({ d, lunes, esMant, onCambio, acciones }: { d: Datos; lunes: str
                     return (
                       <div key={c} onDragOver={(e) => { if (esMant) { e.preventDefault(); setSobre(clave) } }} onDragLeave={() => setSobre(null)} onDrop={(e) => soltar(e, f.id, c)}
                         className={`flex min-h-[120px] flex-col gap-1.5 border-l border-linea-2 p-2 ${c === hoy() ? 'bg-[#fffafa]' : ''} ${sobre === clave ? 'bg-rojo-suave outline-2 -outline-offset-2 outline-primario outline-dashed' : ''}`}>
-                        {items.map((o) => <TarjetaOT key={o.id} o={o} esMant={esMant} filas={filas} columnas={columnas} onAbrir={() => nav(`/ordenes/${o.id}`)} onMover={mover} />)}
+                        {items.map((o) => <TarjetaOT key={o.id} o={o} esMant={esMant} filas={filas} onAbrir={() => nav(`/ordenes/${o.id}`)} onMover={mover} onPrioridad={prioridad} />)}
                         {f.id && carga < 1 && (
                           <span className={`flex flex-1 items-center justify-center rounded-xl border-[1.5px] border-dashed border-[#7db892] bg-[#f3faf5] py-2 text-xs font-semibold text-aprobado ${items.length ? 'min-h-[30px] flex-none' : 'min-h-[60px]'}`}>Libre {dTxt(1 - carga)}</span>
                         )}
@@ -168,8 +179,8 @@ function Agenda({ d, lunes, esMant, onCambio, acciones }: { d: Datos; lunes: str
   )
 }
 
-function TarjetaOT({ o, esMant, filas, columnas, onAbrir, onMover }:
-  { o: Orden; esMant: boolean; filas: { id: string; nombre: string }[]; columnas: string[]; onAbrir: () => void; onMover: (id: string, a: string | null, dia: string) => void }) {
+function TarjetaOT({ o, esMant, filas, onAbrir, onMover, onPrioridad }:
+  { o: Orden; esMant: boolean; filas: { id: string; nombre: string }[]; onAbrir: () => void; onMover: (id: string, a: string | null, dia: string) => void; onPrioridad: (id: string, p: Prioridad) => void }) {
   const prev = o.tipo === 'preventiva'
   const abierta = o.estado === 'pendiente' || o.estado === 'en_proceso'
   const vencida = abierta && !!o.fecha_programada && o.fecha_programada < hoy()
@@ -190,14 +201,20 @@ function TarjetaOT({ o, esMant, filas, columnas, onAbrir, onMover }:
         <InsEstadoOT e={o.estado} vencida={vencida} />
       </span>
       {esMant && abierta && (
-        <span className="mt-0.5 flex items-center gap-1 border-t border-dashed border-black/10 pt-1.5">
-          <select className="min-w-0 flex-1 rounded-full border border-borde-campo bg-white px-1.5 py-0.5 text-[11px]" value={o.asignado_id ?? ''} aria-label="Reasignar operario"
+        <span className="mt-0.5 flex flex-col gap-1 border-t border-dashed border-black/10 pt-1.5">
+          <select className="w-full min-w-0 rounded-full border border-borde-campo bg-white px-1.5 py-0.5 text-[11px]" value={o.asignado_id ?? ''} aria-label="Reasignar operario"
             onChange={(e) => onMover(o.id, e.target.value, o.fecha_programada ?? hoy())}>
             {filas.map((f) => <option key={f.id} value={f.id}>{f.nombre}</option>)}
           </select>
-          <select className="w-[64px] rounded-full border border-borde-campo bg-white px-1.5 py-0.5 text-[11px]" value={o.fecha_programada ?? ''} aria-label="Cambiar día"
-            onChange={(e) => onMover(o.id, o.asignado_id, e.target.value)}>
-            {columnas.map((c) => <option key={c} value={c}>{DIAS[deISO(c).getDay()]}</option>)}
+          <span className="flex items-center gap-1">
+            <input type="date" className="min-w-0 flex-1 rounded-full border border-borde-campo bg-white px-1.5 py-0.5 text-[11px]" value={o.fecha_programada ?? ''} aria-label="Cambiar fecha" title="Cambiar la fecha (cualquier semana)"
+              onChange={(e) => e.target.value && e.target.value !== o.fecha_programada && onMover(o.id, o.asignado_id, e.target.value)} />
+            <button type="button" className="shrink-0 rounded-full border border-borde-campo bg-white px-1.5 py-0.5 text-[11px]" title="Pasar a la semana siguiente (mismo día)"
+              onClick={() => onMover(o.id, o.asignado_id, sumarDias(o.fecha_programada ?? hoy(), 7))}>+1 sem</button>
+          </span>
+          <select className="w-full min-w-0 rounded-full border border-borde-campo bg-white px-1.5 py-0.5 text-[11px]" value={o.prioridad} aria-label="Prioridad"
+            onChange={(e) => onPrioridad(o.id, e.target.value as Prioridad)}>
+            {PRIORIDADES.map((p) => <option key={p} value={p}>Prioridad {p}</option>)}
           </select>
         </span>
       )}

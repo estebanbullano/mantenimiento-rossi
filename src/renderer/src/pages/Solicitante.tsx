@@ -6,10 +6,14 @@ import { useEquipos } from '@/lib/catalogos'
 import { fmtFecha, numPedido, subirArchivo, useDatos } from '@/lib/util'
 import type { ComentarioPedido, Equipo, Pedido, Urgencia } from '@/lib/tipos'
 import { Boton, Campo, Cargando, ErrorBox, ESTADO_EQUIPO, InsEstadoPedido, OkBox, Segmento, Vacio } from '@/components/ui'
-import { CargaFoto, OpcionPunto, PantallaCelular } from '@/components/Celular'
+import { OpcionPunto, PantallaCelular } from '@/components/Celular'
+import { CargarAdjuntos, subirAdjuntos, type AdjuntoNuevo } from '@/components/AdjuntosPedido'
 import { esRolCelular } from '@/components/Layout'
 
 const OTRO = '__otro'
+const CLAVE_MAIL = 'mant.mail_contacto'
+const leerMail = () => { try { return localStorage.getItem(CLAVE_MAIL) ?? '' } catch { return '' } }
+const guardarMail = (m: string) => { try { localStorage.setItem(CLAVE_MAIL, m) } catch { /* sin almacenamiento */ } }
 const esMailInterno = (m?: string | null) => !m || m.endsWith('@planta.famigliarossi.local')
 const fmtCorta = (iso: string) => new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
 
@@ -48,15 +52,27 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
   const { data: equipos, cargando } = useEquipos()
   const areas = useAreas(equipos)
   const [nombre, setNombre] = useState(usuario?.nombre ?? '')
-  const [mail, setMail] = useState(esMailInterno(usuario?.email) ? '' : usuario?.email ?? '')
+  const [mail, setMail] = useState(esMailInterno(usuario?.email) ? leerMail() : usuario?.email ?? '')
   const [area, setArea] = useState('')
   const [equipoId, setEquipoId] = useState('')
   const [ubicacion, setUbicacion] = useState('')
   const [estado, setEstado] = useState<Urgencia>('media')
   const [desc, setDesc] = useState('')
-  const [foto, setFoto] = useState<File | null>(null)
+  const [adjuntos, setAdjuntos] = useState<AdjuntoNuevo[]>([])
+  const [avisoAdj, setAvisoAdj] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [enviando, setEnviando] = useState(false)
+
+  // Mail por defecto: el de su usuario; si entra por legajo, el último que usó en un pedido
+  useEffect(() => {
+    if (mail || !usuario?.id) return
+    void supabase.from('mant_pedidos').select('email_contacto').eq('solicitante_id', usuario.id).not('email_contacto', 'is', null)
+      .order('creado_en', { ascending: false }).limit(1).then(({ data }) => {
+        const m = (data?.[0] as { email_contacto: string } | undefined)?.email_contacto
+        if (m) setMail((x) => x || m)
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario?.id])
 
   // Desde el QR del equipo: ya viene elegido
   useEffect(() => {
@@ -76,7 +92,8 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
     setError(null); setEnviando(true)
     try {
       const eq = equipos?.find((x) => x.id === equipoId)
-      const foto_ruta = foto ? await subirArchivo(`pedidos/${usuario!.id}`, foto) : null
+      const primera = adjuntos.find((a) => a.tipo === 'foto')
+      const foto_ruta = primera ? await subirArchivo(`pedidos/${usuario!.id}/foto`, primera.archivo) : null
       const { data, error } = await supabase.from('mant_pedidos').insert({
         titulo: desc.trim().split('\n')[0].slice(0, 80),
         equipo_id: eq ? eq.id : null,
@@ -88,9 +105,12 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
         nombre_contacto: nombre.trim() || null,
         email_contacto: mail.trim() || null,
         foto_ruta
-      }).select('numero').single()
+      }).select('id, numero').single()
       if (error) throw error
-      setEquipoId(''); setUbicacion(''); setDesc(''); setEstado('media'); setFoto(null)
+      if (mail.trim()) guardarMail(mail.trim())
+      const fallas = adjuntos.length ? await subirAdjuntos(data.id, `pedidos/${usuario!.id}`, adjuntos, primera && foto_ruta ? { id: primera.id, ruta: foto_ruta } : undefined) : 0
+      setAvisoAdj(fallas ? `El pedido se envió, pero ${fallas} adjunto${fallas > 1 ? 's no se pudieron' : ' no se pudo'} subir.` : null)
+      setEquipoId(''); setUbicacion(''); setDesc(''); setEstado('media'); setAdjuntos([])
       onEnviado(data.numero)
     } catch (err) {
       setError(mensajeError(err))
@@ -103,7 +123,7 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
   return (
     <div className="flex flex-col gap-3.5">
       <Campo etiqueta="Tu nombre" suave><input className="campo" value={nombre} onChange={(e) => setNombre(e.target.value)} /></Campo>
-      <Campo etiqueta="Tu mail" suave ayuda="Te vamos a mandar ahí los avisos y avances del pedido.">
+      <Campo etiqueta="Tu mail" suave ayuda={mail ? 'Te avisamos ahí los avances del pedido. Lo recordamos para la próxima.' : 'Te vamos a mandar ahí los avisos y avances del pedido.'}>
         <input className="campo" type="email" placeholder="nombre@famigliarossi.com.ar" value={mail} onChange={(e) => setMail(e.target.value)} />
       </Campo>
       <Campo etiqueta="Área" suave>
@@ -132,9 +152,10 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
         <textarea className="campo resize-none" rows={3} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Ej.: pierde aceite por el sello y hace ruido al arrancar" />
       </Campo>
       <div className="flex flex-col gap-1.5">
-        <span className="text-[13px] font-medium text-suave">Foto <span className="font-normal text-tenue">· opcional</span></span>
-        <CargaFoto archivo={foto} onArchivo={setFoto} onQuitar={() => setFoto(null)} />
+        <span className="text-[13px] font-medium text-suave">Foto, documento, video o audio <span className="font-normal text-tenue">· opcional</span></span>
+        <CargarAdjuntos lista={adjuntos} onCambio={setAdjuntos} />
       </div>
+      <ErrorBox texto={avisoAdj} />
       <ErrorBox texto={error} />
       <Boton grande className="w-full" cargando={enviando} onClick={() => void enviar()}>Enviar pedido</Boton>
       <div className="text-center text-xs text-tenue">Llega directo a la bandeja de mantenimiento. Ya no hace falta mandarlo por WhatsApp.</div>

@@ -6,8 +6,8 @@ import { useOperarios } from '@/lib/catalogos'
 import { fmtFecha, fmtNum, hoy, lunesDe, numOT, numPedido, sumarDias, useDatos } from '@/lib/util'
 import type { ComentarioPedido, Orden, Pedido, Prioridad, Usuario } from '@/lib/tipos'
 import { Barra, Boton, Cargando, ErrorBox, ESTADO_EQUIPO, H2, InsEstadoEquipo, InsEstadoPedido, InsPrioridad, OkBox, Pagina, estadoBandeja, useAviso } from '@/components/ui'
-import { Foto } from '@/components/selectores'
 import { MarcoTelefono, PedidosCelular } from './Solicitante'
+import { VerAdjuntos } from '@/components/AdjuntosPedido'
 
 /** "Pedidos": la bandeja para mantenimiento; para el resto, su vista de celular */
 export function Pedidos() {
@@ -82,18 +82,22 @@ function Bandeja() {
       </div>
       <ErrorBox texto={error} />
       <div className="tarjeta overflow-x-auto">
-        <div className="min-w-[940px]">
-          <div className="grid grid-cols-[86px_minmax(0,1fr)_200px_100px_130px_120px_36px] gap-3 border-b border-linea px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.05em] text-tenue">
-            <span>Pedido</span><span>Detalle</span><span>Equipo</span><span>Antigüedad</span><span>Prioridad</span><span>Estado</span><span />
+        <div className="min-w-[1120px]">
+          <div className="grid grid-cols-[86px_minmax(0,1fr)_170px_190px_96px_130px_120px_36px] gap-3 border-b border-linea px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.05em] text-tenue">
+            <span>Pedido</span><span>Detalle</span><span>Solicitó</span><span>Equipo</span><span>Antigüedad</span><span>Prioridad</span><span>Estado</span><span />
           </div>
           {cargando && !data ? <Cargando /> : lista.length === 0 ? <div className="p-5 text-sm text-suave">No hay pedidos con esos filtros.</div> : lista.map((p) => (
             <Fragment key={p.id}>
               <button onClick={() => setAbierto(abierto === p.id ? null : p.id)}
-                className={`grid w-full grid-cols-[86px_minmax(0,1fr)_200px_100px_130px_120px_36px] items-center gap-3 border-b border-linea-2 px-5 py-3.5 text-left text-texto ${abierto === p.id ? 'bg-rojo-suave' : 'bg-white hover:bg-crema'}`}>
+                className={`grid w-full grid-cols-[86px_minmax(0,1fr)_170px_190px_96px_130px_120px_36px] items-center gap-3 border-b border-linea-2 px-5 py-3.5 text-left text-texto ${abierto === p.id ? 'bg-rojo-suave' : 'bg-white hover:bg-crema'}`}>
                 <span className="text-[13px] font-semibold">{numPedido(p.numero)}</span>
                 <span className="flex min-w-0 flex-col gap-0.5">
                   <span className="truncate text-sm font-medium">{p.titulo || p.descripcion}</span>
-                  <span className="truncate text-xs text-tenue">{[p.area, p.nombre_contacto ?? p.solicitante_nombre].filter(Boolean).join(' · ')}</span>
+                  {p.descripcion && p.descripcion !== p.titulo && <span className="truncate text-xs text-tenue">{p.descripcion}</span>}
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="truncate text-[13px] font-semibold">{p.nombre_contacto ?? p.solicitante_nombre ?? '—'}</span>
+                  {p.area && <span className="truncate text-xs text-tenue">{p.area}</span>}
                 </span>
                 <span className="flex flex-col items-start gap-1">
                   <span className="text-[13px]">{p.equipo_nombre ?? p.ubicacion ?? 'Sin equipo'}</span>
@@ -180,7 +184,7 @@ function DetallePedido({ p, operarios, ots, onCambio }: { p: Pedido; operarios: 
           {p.email_contacto && filaDato('Avisos a', p.email_contacto)}
         </div>
         <div className="rounded-[14px] bg-fondo px-3.5 py-3 leading-relaxed"><span className="mb-1 block text-xs text-tenue">Descripción del solicitante</span><span className="whitespace-pre-wrap">{p.descripcion}</span></div>
-        {p.foto_ruta && <Foto ruta={p.foto_ruta} className="h-[220px] w-full max-w-[420px] rounded-[14px]" />}
+        <VerAdjuntos pedidoId={p.id} fotoPrincipal={p.foto_ruta} />
         {p.motivo_rechazo && <div className="rounded-[14px] bg-beige px-3.5 py-3"><b>Descartado:</b> {p.motivo_rechazo}</div>}
       </div>
 

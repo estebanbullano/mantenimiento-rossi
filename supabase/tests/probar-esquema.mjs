@@ -381,5 +381,25 @@ check((await as(U.ref, `select mant_ot_reloj($1) r`, [op0])).rows[0].r === 'term
 check((await as(U.ref, `select count(*)::int n from mant_v_ordenes where equipo_id=$1 and estado='no_realizada' and no_realizada_motivo='maquina_parada'`, [eq])).rows[0].n === 1, 'queda en el historial de la máquina, con el motivo')
 check(!!(await fails(U.op, `select mant_ot_no_realizada($1)`, [op0])), 'no se marca dos veces')
 
+console.log('Pedidos: adjuntos y aviso al mover la OT (0009)')
+const pj = (await as(U.sol, `insert into mant_pedidos (equipo_id, descripcion, urgencia_reportada) values ($1,'Gotea la bomba','media') returning id`, [eq])).rows[0].id
+await as(U.sol, `insert into mant_pedido_adjuntos (pedido_id, tipo, ruta, nombre) values ($1,'foto','p/1.jpg','foto.jpg'),($1,'documento','p/2.pdf','plano.pdf'),($1,'audio','p/3.webm',null),($1,'video','p/4.mp4',null)`, [pj])
+check((await as(U.ref, `select count(*)::int n from mant_pedido_adjuntos where pedido_id=$1`, [pj])).rows[0].n === 4, 'el solicitante adjunta foto, documento, audio y video, y mantenimiento los ve')
+check(!!(await fails(U.op2, `insert into mant_pedido_adjuntos (pedido_id, tipo, ruta) values ($1,'foto','x.jpg')`, [pj])), 'otro usuario no adjunta en un pedido ajeno')
+check(!!(await fails(U.sol, `insert into mant_pedido_adjuntos (pedido_id, tipo, ruta) values ($1,'planilla','x.xls')`, [pj])), 'tipo de adjunto inválido')
+const cAntes = (await as(U.ref, `select count(*)::int n from mant_pedido_comentarios where pedido_id=$1`, [pj])).rows[0].n
+const otj = (await as(U.ref, `select mant_convertir_pedido($1,'media',current_date+3,1,$2,current_date) o`, [pj, U.op])).rows[0].o
+const cConv = (await as(U.ref, `select texto from mant_pedido_comentarios where pedido_id=$1 order by creado_en`, [pj])).rows.slice(cAntes).map((r) => r.texto)
+check(cConv.length === 1 && cConv[0].startsWith('Asignado a'), 'al convertir no aparece un aviso de "reprogramado"')
+await as(U.ref, `update mant_ordenes set fecha_programada = current_date + 7, semana = date_trunc('week', current_date + 7)::date where id=$1`, [otj])
+const pjv = (await as(U.sol, `select (fecha_cierre_estimada - current_date) d from mant_pedidos where id=$1`, [pj])).rows[0].d
+const avis = (await as(U.sol, `select texto from mant_pedido_comentarios where pedido_id=$1 order by creado_en desc limit 1`, [pj])).rows[0].texto
+check(pjv === 7 && avis.startsWith('Reprogramamos el trabajo para el'), 'al mover la OT en la agenda, el solicitante ve la nueva fecha y el aviso')
+check((await as(U.ref, `select (fecha_comprometida - current_date) d from mant_ordenes where id=$1`, [otj])).rows[0].d === 7, 'la OT queda con la misma fecha comprometida')
+await as(U.ref, `update mant_ordenes set asignado_id=$2, prioridad='alta' where id=$1`, [otj, U.op2])
+const pjr = (await as(U.ref, `select responsable_id, prioridad from mant_pedidos where id=$1`, [pj])).rows[0]
+check(pjr.responsable_id === U.op2 && pjr.prioridad === 'alta', 'cambiar operario o prioridad en la agenda también actualiza el pedido')
+check((await as(U.sol, `select texto from mant_pedido_comentarios where pedido_id=$1 order by creado_en desc limit 1`, [pj])).rows[0].texto.startsWith('Lo va a hacer'), 'y le avisa al solicitante quién lo hace')
+
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)
