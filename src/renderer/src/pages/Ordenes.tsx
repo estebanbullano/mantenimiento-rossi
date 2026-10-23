@@ -8,6 +8,7 @@ import { PRIORIDADES, type Orden, type Prioridad, type Usuario } from '@/lib/tip
 import { Boton, Campo, Cargando, Chip, CRIT, ErrorBox, H2, Insignia, InsEstadoOT, Modal, Pagina, Pestanas, Tarjeta, Vacio, useAviso } from '@/components/ui'
 import { Foto, SelectorEquipo } from '@/components/selectores'
 import { Programar } from './Programar'
+import { pedirTexto } from '@/components/Pregunta'
 
 type Vista = 'programar' | 'agenda' | 'supervisor' | 'lista'
 const DIAS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']
@@ -263,7 +264,7 @@ function PanelSupervisor({ d, esMant, onCambio }: { d: Datos; esMant: boolean; o
 
   async function revisar(o: Orden, r: 'aprobada' | 'rehacer' | 'pendiente') {
     let comentario: string | null = null
-    if (r === 'rehacer') { comentario = prompt('¿Qué hay que rehacer? (lo ve el operario en la tarea)'); if (comentario === null) return }
+    if (r === 'rehacer') { comentario = await pedirTexto({ titulo: 'Pedir que se rehaga', mensaje: 'Lo ve el operario en la tarea.', etiqueta: '¿Qué hay que rehacer?', aceptar: 'Pedir rehacer' }); if (comentario === null) return }
     const { error } = await supabase.rpc('mant_revisar_foto', { p_orden: o.id, p_resultado: r, p_comentario: comentario })
     if (error) avisar(mensajeError(error), 'error'); else onCambio()
   }

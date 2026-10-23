@@ -8,6 +8,7 @@ import type { ComentarioPedido, Orden, Pedido, Prioridad, Usuario } from '@/lib/
 import { Barra, Boton, Cargando, ErrorBox, ESTADO_EQUIPO, H2, InsEstadoEquipo, InsEstadoPedido, InsPrioridad, OkBox, Pagina, estadoBandeja, useAviso } from '@/components/ui'
 import { MarcoTelefono, PedidosCelular } from './Solicitante'
 import { VerAdjuntos } from '@/components/AdjuntosPedido'
+import { pedirTexto } from '@/components/Pregunta'
 
 /** "Pedidos": la bandeja para mantenimiento; para el resto, su vista de celular */
 export function Pedidos() {
@@ -165,7 +166,7 @@ function DetallePedido({ p, operarios, ots, onCambio }: { p: Pedido; operarios: 
   }
 
   async function rechazar() {
-    const motivo = prompt('¿Por qué se descarta este pedido? (lo ve el solicitante)')
+    const motivo = await pedirTexto({ titulo: 'Descartar pedido', mensaje: 'El motivo lo ve el solicitante.', etiqueta: '¿Por qué se descarta?', aceptar: 'Descartar', peligro: true })
     if (motivo === null) return
     const { error } = await supabase.rpc('mant_resolver_pedido', { p_pedido: p.id, p_aprobar: false, p_motivo: motivo || null })
     if (error) avisar(mensajeError(error), 'error'); else onCambio()

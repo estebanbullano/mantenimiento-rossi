@@ -4,6 +4,7 @@ import { ProveedorSesion, useSesion } from '@/lib/sesion'
 import type { Rol } from '@/lib/tipos'
 import { Cargando, ProveedorAvisos, Vacio } from '@/components/ui'
 import { Layout } from '@/components/Layout'
+import { ProveedorPreguntas } from '@/components/Pregunta'
 import { Acceso, CuentaPendiente, NuevaClave } from '@/pages/Acceso'
 import { Inicio } from '@/pages/Inicio'
 import { NuevoPedido } from '@/pages/Solicitante'
@@ -79,6 +80,7 @@ export function App() {
         <HashRouter>
           <Rutas />
         </HashRouter>
+        <ProveedorPreguntas />
       </ProveedorSesion>
     </ProveedorAvisos>
   )

@@ -4,6 +4,7 @@ import { fmtNum, urlFirmada, useDatos } from '@/lib/util'
 import type { Articulo, Orden } from '@/lib/tipos'
 import { Boton, H2, Insignia, OkBox, Tarjeta, useAviso } from './ui'
 import { Foto, SelectorArticulo } from './selectores'
+import { pedirTexto } from '@/components/Pregunta'
 
 interface Evento { id: string; tipo: 'inicio' | 'pausa' | 'reanudar' | 'fin'; creado_en: string }
 interface FotoOT { id: string; ruta: string; tipo: string; nota: string | null; paso: number | null; creado_en: string; tomada_en: string | null; desfase_seg: number | null }
@@ -78,7 +79,7 @@ export function RevisionCierre({ orden, onCambio }: { orden: Orden; onCambio: ()
   }
   async function revisar(res: 'aprobada' | 'rehacer') {
     let comentario: string | null = null
-    if (res === 'rehacer') { comentario = prompt('¿Qué hay que rehacer? (lo ve el operario)'); if (comentario === null) return }
+    if (res === 'rehacer') { comentario = await pedirTexto({ titulo: 'Pedir que se rehaga', mensaje: 'Lo ve el operario.', etiqueta: '¿Qué hay que rehacer?', aceptar: 'Pedir rehacer' }); if (comentario === null) return }
     setOcupado(res)
     if (res === 'aprobada' && informe !== (orden.comentario_cierre ?? '')) await supabase.from('mant_ordenes').update({ comentario_cierre: informe.trim() || null }).eq('id', orden.id)
     const { error } = await supabase.rpc('mant_revisar_foto', { p_orden: orden.id, p_resultado: res, p_comentario: comentario })

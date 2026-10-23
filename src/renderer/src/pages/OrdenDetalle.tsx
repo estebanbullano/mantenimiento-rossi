@@ -8,6 +8,7 @@ import { PRIORIDADES, type Articulo, type Orden, type OtItem, type Prioridad } f
 import { Boton, Campo, Cargando, ErrorBox, Insignia, InsEstadoOT, InsPrioridad, Modal, Pagina, Tarjeta, useAviso } from '@/components/ui'
 import { BotonFoto, Foto, SelectorArticulo } from '@/components/selectores'
 import { RevisionCierre } from '@/components/RevisionCierre'
+import { pedirTexto } from '@/components/Pregunta'
 
 interface FotoOT { id: string; ruta: string; tipo: 'antes' | 'cierre' | 'paso' | 'rechazada'; creado_en: string }
 interface RepuestoOT { id: string; texto: string; cantidad: number; articulo_id: string | null; articulo?: { codigo: string; descripcion: string; unidad: string } | null }
@@ -84,7 +85,7 @@ export function OrdenDetalle() {
   }
 
   async function noRealizada() {
-    const det = prompt('No se hizo porque la máquina estuvo parada. Detalle opcional (ej.: bajó la producción de legumbres):', '')
+    const det = await pedirTexto({ titulo: 'No se hizo · máquina parada', mensaje: 'Queda asentado en el historial de la máquina que el mantenimiento no se hizo porque la máquina estuvo parada.', etiqueta: 'Detalle (opcional, ej.: bajó la producción de legumbres)', aceptar: 'Registrar' })
     if (det === null) return
     const { data: prox, error } = await supabase.rpc('mant_ot_no_realizada', { p_orden: id, p_motivo: 'maquina_parada', p_detalle: det.trim() || null })
     if (error) return avisar(mensajeError(error), 'error')
