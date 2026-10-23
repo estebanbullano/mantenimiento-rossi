@@ -16,6 +16,7 @@ import { Preventivo } from '@/pages/Preventivo'
 import { Equipos } from '@/pages/Equipos'
 import { EquipoDetalle } from '@/pages/EquipoDetalle'
 import { EtiquetasQR } from '@/pages/EtiquetasQR'
+import { FotosEquipos } from '@/pages/FotosEquipos'
 import { Panol } from '@/pages/Panol'
 import { Compras } from '@/pages/Compras'
 import { Indicadores } from '@/pages/Indicadores'
@@ -58,6 +59,7 @@ function Rutas() {
         <Route path="preventivo" element={<Solo roles={STAFF}><Preventivo /></Solo>} />
         <Route path="equipos" element={<Solo roles={[...STAFF, 'panolero']}><Equipos /></Solo>} />
         <Route path="equipos/qr" element={<Solo roles={MANT}><EtiquetasQR /></Solo>} />
+        <Route path="fotos-equipos" element={<Solo roles={[...STAFF, 'operario']}><FotosEquipos /></Solo>} />
         <Route path="equipos/:id" element={<Solo roles={[...STAFF, 'panolero']}><EquipoDetalle /></Solo>} />
         <Route path="panol" element={<Solo roles={['panolero', 'compras', ...STAFF]}><Panol /></Solo>} />
         <Route path="compras" element={<Solo roles={['panolero', 'compras', ...STAFF]}><Compras /></Solo>} />

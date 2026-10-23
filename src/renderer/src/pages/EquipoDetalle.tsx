@@ -10,6 +10,7 @@ import { SelectorArticulo } from '@/components/selectores'
 import { FormEquipo } from './Equipos'
 import { HistorialEquipo } from '@/components/HistorialEquipo'
 import { HorasUso } from '@/components/HorasUso'
+import { FotoEquipo } from './FotosEquipos'
 
 type RepRef = { articulo_id: string; cantidad_ref: number; articulo: { codigo: string; descripcion: string; stock_actual: number; unidad: string } }
 type Hist = { id: string; valor_anterior: number; unidad_anterior: Unidad; valor_nuevo: number; unidad_nueva: Unidad; motivo: string | null; creado_en: string; tarea_id: string; fecha_anterior: string | null; fecha_nueva: string | null }
@@ -68,6 +69,7 @@ export function EquipoDetalle() {
       <ErrorBox texto={error} />
       <div className="grid gap-4 lg:grid-cols-3">
         <Tarjeta titulo="Ficha técnica">
+          <div className="mb-4"><FotoEquipo equipoId={e.id} codigo={e.codigo} /></div>
           <dl className="grid grid-cols-2 gap-3 text-sm">
             <div><dt className="etiqueta">Marca</dt><dd>{e.marca ?? '—'}</dd></div>
             <div><dt className="etiqueta">Modelo</dt><dd>{e.modelo ?? '—'}</dd></div>
