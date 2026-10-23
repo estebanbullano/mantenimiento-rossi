@@ -5,7 +5,7 @@ import { useSesion } from '@/lib/sesion'
 import { useEquipos } from '@/lib/catalogos'
 import { fmtFecha, numPedido, subirArchivo, useDatos } from '@/lib/util'
 import type { ComentarioPedido, Equipo, Pedido, Urgencia } from '@/lib/tipos'
-import { Boton, Campo, Cargando, ErrorBox, ESTADO_EQUIPO, InsEstadoPedido, OkBox, Segmento, Vacio } from '@/components/ui'
+import { Boton, Campo, Cargando, ErrorBox, ESTADO_EQUIPO, OkBox, Segmento, Vacio } from '@/components/ui'
 import { OpcionPunto, PantallaCelular } from '@/components/Celular'
 import { Foto } from '@/components/selectores'
 import { CargarAdjuntos, subirAdjuntos, type AdjuntoNuevo } from '@/components/AdjuntosPedido'
@@ -235,52 +235,130 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
   )
 }
 
+interface OtPedido { id: string; pedido_id: string; estado: string; revision_foto: string | null; asignado_nombre: string | null; completada_en: string | null }
+interface EvalPedido { id: string; evaluacion: number | null; evaluacion_comentario: string | null }
+
+/** Estado del pedido como lo ve el solicitante */
+function estadoSolicitante(p: Pedido, ot?: OtPedido): { txt: string; color: string; fondo: string } {
+  if (p.estado === 'rechazado') return { txt: 'Descartado', color: '#6b6258', fondo: '#efeae2' }
+  if (p.estado === 'cerrado') return ot?.revision_foto === 'aprobada'
+    ? { txt: '✓ Aprobado', color: '#1e6b3a', fondo: '#e3f2e8' }
+    : { txt: 'Trabajo completado · falta verificación de supervisión', color: '#8a5a00', fondo: '#fff3d6' }
+  if (p.estado === 'en_ot') {
+    if (ot?.revision_foto === 'rehacer') return { txt: 'En proceso · corrigiendo', color: '#24508f', fondo: '#e6eef9' }
+    if (ot?.estado === 'en_proceso') return { txt: 'En proceso', color: '#24508f', fondo: '#e6eef9' }
+    return { txt: 'Programado', color: '#24508f', fondo: '#e6eef9' }
+  }
+  return p.prioridad ? { txt: 'Priorizado', color: '#6b6258', fondo: '#efeae2' } : { txt: 'Recibido · por priorizar', color: '#b3141a', fondo: '#fbe5e5' }
+}
+
 function MisPedidos({ recien }: { recien: number | null }) {
   const { usuario } = useSesion()
-  const { data, cargando, error } = useDatos(async () => {
-    const r = await supabase.from('mant_v_pedidos').select('*').eq('solicitante_id', usuario!.id).order('creado_en', { ascending: false }).limit(60)
+  const [vista, setVista] = useState<'curso' | 'hechos'>('curso')
+  const { data, cargando, error, recargar } = useDatos(async () => {
+    const r = await supabase.from('mant_v_pedidos').select('*').eq('solicitante_id', usuario!.id).order('creado_en', { ascending: false }).limit(100)
     const pedidos = (r.data ?? []) as Pedido[]
-    const c = pedidos.length
-      ? await supabase.from('mant_pedido_comentarios').select('*').in('pedido_id', pedidos.map((p) => p.id)).order('creado_en')
-      : { data: [] }
+    const ids = pedidos.map((p) => p.id)
+    const [c, o, ev] = ids.length ? await Promise.all([
+      supabase.from('mant_pedido_comentarios').select('*').in('pedido_id', ids).order('creado_en'),
+      supabase.from('mant_v_ordenes').select('id,pedido_id,estado,revision_foto,asignado_nombre,completada_en').in('pedido_id', ids).neq('estado', 'cancelada'),
+      supabase.from('mant_pedidos').select('id,evaluacion,evaluacion_comentario').in('id', ids)
+    ]) : [{ data: [] }, { data: [] }, { data: [] }]
     const porPedido: Record<string, ComentarioPedido[]> = {}
     for (const x of (c.data ?? []) as ComentarioPedido[]) (porPedido[x.pedido_id] ??= []).push(x)
-    return { data: { pedidos, porPedido }, error: r.error }
+    const ots = new Map(((o.data ?? []) as OtPedido[]).map((x) => [x.pedido_id, x]))
+    const evals = new Map(((ev.data ?? []) as EvalPedido[]).map((x) => [x.id, x]))
+    return { data: { pedidos, porPedido, ots, evals }, error: r.error }
   }, [usuario?.id, recien])
 
   if (cargando && !data) return <Cargando />
+  const hechos = (data?.pedidos ?? []).filter((p) => p.estado === 'cerrado' || p.estado === 'rechazado')
+  const curso = (data?.pedidos ?? []).filter((p) => p.estado !== 'cerrado' && p.estado !== 'rechazado')
+  const sinCalificar = hechos.filter((p) => p.estado === 'cerrado' && !data?.evals.get(p.id)?.evaluacion).length
+  const lista = vista === 'curso' ? curso : hechos
   return (
     <div className="flex flex-col gap-3">
       {recien && <OkBox>Listo, tu pedido {numPedido(recien)} quedó registrado.</OkBox>}
       <ErrorBox texto={error} />
-      {data && data.pedidos.length === 0 && <Vacio texto="Todavía no hiciste pedidos." />}
-      {data?.pedidos.map((p) => {
+      <Segmento valor={vista} onCambio={setVista} opciones={[['curso', `En curso (${curso.length})`], ['hechos', `Completados (${hechos.length})${sinCalificar ? ' ●' : ''}`]]} />
+      {vista === 'hechos' && sinCalificar > 0 && <span className="text-[13px] text-suave">Tenés {sinCalificar} {sinCalificar === 1 ? 'trabajo' : 'trabajos'} para calificar. Nos ayuda a mejorar.</span>}
+      {data && lista.length === 0 && <Vacio texto={vista === 'curso' ? 'No tenés pedidos en curso.' : 'Todavía no hay trabajos completados.'} />}
+      {data && lista.map((p) => {
+        const ot = data.ots.get(p.id)
+        const est = estadoSolicitante(p, ot)
         const avisos = [{ t: `Recibimos tu pedido ${numPedido(p.numero)}`, w: p.creado_en }, ...(data.porPedido[p.id] ?? []).map((c) => ({ t: c.texto, w: c.creado_en }))]
-        const mail = p.email_contacto
+        const ultimo = avisos[avisos.length - 1]
         return (
           <div key={p.id} className="flex flex-col gap-2 rounded-[18px] border border-borde p-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium text-tenue">{numPedido(p.numero)} · {fmtCorta(p.creado_en)}</span>
-              <InsEstadoPedido e={p.estado} prioridad={p.prioridad} />
-            </div>
+            <span className="text-xs font-medium text-tenue">{numPedido(p.numero)} · {fmtCorta(p.creado_en)}</span>
+            <span className="self-start rounded-xl px-2.5 py-1.5 text-[13px] font-semibold leading-snug" style={{ color: est.color, background: est.fondo }}>{est.txt}</span>
             <div className="text-[15px] font-medium leading-snug">{p.descripcion}</div>
             <div className="text-[13px] text-suave">{p.equipo_nombre ?? p.ubicacion ?? 'Sin equipo'}</div>
-            <div className="flex justify-between rounded-xl bg-fondo px-3 py-2 text-[13px]">
-              <span className="text-suave">Fecha comprometida</span>
-              <span className="font-semibold">{p.fecha_cierre_estimada ? fmtFecha(p.fecha_cierre_estimada).slice(0, 5) : 'A definir'}</span>
-            </div>
-            <div className="flex flex-col gap-1.5 border-t border-linea pt-2">
-              <span className="text-xs text-tenue">{mail ? `Avisos enviados a ${mail}` : 'Avances del pedido'}</span>
-              {avisos.map((a, i) => (
-                <span key={i} className="flex gap-2 text-[13px] leading-snug">
-                  <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-aprobado" />
-                  <span><span className="font-medium">{a.t}</span> <span className="text-tenue">· {fmtCorta(a.w)}</span></span>
-                </span>
-              ))}
-            </div>
+            {vista === 'curso' && (
+              <div className="flex justify-between rounded-xl bg-fondo px-3 py-2 text-[13px]">
+                <span className="text-suave">Fecha comprometida</span>
+                <span className="font-semibold">{p.fecha_cierre_estimada ? fmtFecha(p.fecha_cierre_estimada).slice(0, 5) : 'A definir'}</span>
+              </div>
+            )}
+            {p.estado === 'cerrado' && <Calificar pedidoId={p.id} actual={data.evals.get(p.id)} quien={ot?.asignado_nombre ?? null} onListo={() => void recargar()} />}
+            <details className="border-t border-linea pt-2">
+              <summary className="cursor-pointer list-none text-[13px]">
+                <span className="text-tenue">Último aviso · {fmtCorta(ultimo.w)}</span>
+                <span className="mt-0.5 block font-medium leading-snug">{ultimo.t}</span>
+                {avisos.length > 1 && <span className="mt-1 block text-xs font-semibold text-primario">Ver todo el seguimiento ({avisos.length})</span>}
+              </summary>
+              <div className="mt-2 flex flex-col gap-1.5">
+                {avisos.map((a, i) => (
+                  <span key={i} className="flex gap-2 text-[13px] leading-snug">
+                    <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-aprobado" />
+                    <span><span className="font-medium">{a.t}</span> <span className="text-tenue">· {fmtCorta(a.w)}</span></span>
+                  </span>
+                ))}
+              </div>
+            </details>
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/** Calificación del trabajo de 1 a 10 */
+function Calificar({ pedidoId, actual, quien, onListo }: { pedidoId: string; actual?: EvalPedido; quien: string | null; onListo: () => void }) {
+  const [editando, setEditando] = useState(!actual?.evaluacion)
+  const [nota, setNota] = useState<number | null>(actual?.evaluacion ?? null)
+  const [com, setCom] = useState(actual?.evaluacion_comentario ?? '')
+  const [guardando, setGuardando] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  async function enviar() {
+    if (!nota) return setErr('Elegí una nota del 1 al 10.')
+    setGuardando(true); setErr(null)
+    const { error } = await supabase.rpc('mant_evaluar_pedido', { p_pedido: pedidoId, p_nota: nota, p_comentario: com.trim() || null })
+    setGuardando(false)
+    if (error) return setErr(mensajeError(error))
+    setEditando(false); onListo()
+  }
+  if (!editando && actual?.evaluacion) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-xl bg-fondo px-3 py-2 text-[13px]">
+        <span>Tu calificación: <b className="text-[15px]">{actual.evaluacion}/10</b>{actual.evaluacion_comentario ? <span className="text-suave"> · {actual.evaluacion_comentario}</span> : ''}</span>
+        <button className="shrink-0 text-xs font-semibold text-primario" onClick={() => setEditando(true)}>Cambiar</button>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2 rounded-[14px] border border-[#f1d49a] bg-[#fffaf0] p-3">
+      <span className="text-[13px] font-semibold">¿Cómo calificás el trabajo{quien ? ` de ${quien}` : ''}?</span>
+      <div className="grid grid-cols-5 gap-1.5">
+        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+          <button key={n} type="button" onClick={() => setNota(n)}
+            className={`h-10 rounded-xl border text-[15px] font-semibold ${nota === n ? 'border-primario bg-primario text-white' : n <= 4 ? 'border-[#f3c4c4] bg-white text-primario-oscuro' : n <= 7 ? 'border-[#f1d49a] bg-white text-pendiente' : 'border-[#bfe0c9] bg-white text-aprobado'}`}>{n}</button>
+        ))}
+      </div>
+      <div className="flex justify-between text-[11px] text-tenue"><span>1 · Muy mal</span><span>10 · Excelente</span></div>
+      <input className="campo" value={com} onChange={(e) => setCom(e.target.value)} placeholder="Comentario (opcional)" />
+      <ErrorBox texto={err} />
+      <Boton className="w-full" cargando={guardando} onClick={() => void enviar()}>Enviar calificación</Boton>
     </div>
   )
 }

@@ -228,7 +228,7 @@ await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, t
 await as(U.op, `update mant_ordenes set estado='completada' where id=$1`, [otd])
 let oc = (await as(U.ref, `select estado, revision_foto from mant_ordenes where id=$1`, [otd])).rows[0]
 check(oc.estado === 'completada' && oc.revision_foto === 'pendiente', 'al cerrar, la foto queda para revisar')
-check((await as(U.sol, `select count(*)::int n from mant_pedido_comentarios where pedido_id=$1 and texto like 'Trabajo terminado%'`, [pd.id])).rows[0].n === 1, 'el solicitante recibe el aviso de trabajo terminado')
+check((await as(U.sol, `select count(*)::int n from mant_pedido_comentarios where pedido_id=$1 and texto like 'Trabajo completado%'`, [pd.id])).rows[0].n === 1, 'el solicitante recibe el aviso de trabajo terminado')
 check(!!(await fails(U.op, `select mant_revisar_foto($1,'aprobada')`, [otd])), 'el operario no revisa fotos')
 await as(U.ref, `select mant_revisar_foto($1,'rehacer','La guía quedó floja')`, [otd])
 oc = (await as(U.ref, `select estado, revision_foto, observacion from mant_ordenes where id=$1`, [otd])).rows[0]
@@ -400,6 +400,25 @@ await as(U.ref, `update mant_ordenes set asignado_id=$2, prioridad='alta' where 
 const pjr = (await as(U.ref, `select responsable_id, prioridad from mant_pedidos where id=$1`, [pj])).rows[0]
 check(pjr.responsable_id === U.op2 && pjr.prioridad === 'alta', 'cambiar operario o prioridad en la agenda también actualiza el pedido')
 check((await as(U.sol, `select texto from mant_pedido_comentarios where pedido_id=$1 order by creado_en desc limit 1`, [pj])).rows[0].texto.startsWith('Lo va a hacer'), 'y le avisa al solicitante quién lo hace')
+
+console.log('Verificación y evaluación del pedido (0011)')
+const pv = (await as(U.sol, `insert into mant_pedidos (equipo_id, descripcion, urgencia_reportada) values ($1,'Pierde la válvula','media') returning id`, [eq])).rows[0].id
+const otv = (await as(U.ref, `select mant_convertir_pedido($1,'media',current_date+2,1,$2,current_date) o`, [pv, U.op])).rows[0].o
+check(!!(await fails(U.sol, `select mant_evaluar_pedido($1, 8)`, [pv])), 'no se califica antes de terminar')
+await as(U.op, `insert into mant_ot_fotos (orden_id, ruta, tipo, desde_camara, tomada_en) values ($1,'c.jpg','cierre',true,now())`, [otv])
+await as(U.op, `update mant_ordenes set estado='completada' where id=$1`, [otv])
+const ult = async () => (await as(U.sol, `select texto from mant_pedido_comentarios where pedido_id=$1 order by creado_en desc, texto limit 1`, [pv])).rows[0].texto
+check((await ult()).includes('falta verificación de supervisión'), 'al cerrar la OT el solicitante ve "falta verificación de supervisión"')
+check((await as(U.sol, `select revision_foto from mant_ordenes where pedido_id=$1`, [pv])).rows[0].revision_foto === 'pendiente', 'el solicitante ve que la revisión está pendiente')
+await as(U.ref, `select mant_revisar_foto($1,'aprobada')`, [otv])
+check((await ult()).includes('aprobó'), 'cuando el supervisor aprueba, el solicitante recibe el aviso')
+check(!!(await fails(U.sol, `select mant_evaluar_pedido($1, 11)`, [pv])), 'la nota va de 1 a 10')
+check(!!(await fails(U.op, `select mant_evaluar_pedido($1, 9)`, [pv])), 'solo el solicitante califica')
+await as(U.sol, `select mant_evaluar_pedido($1, 9, 'Rápido y prolijo')`, [pv])
+const ev = (await as(U.ref, `select evaluacion, evaluacion_comentario from mant_pedidos where id=$1`, [pv])).rows[0]
+check(ev.evaluacion === 9 && ev.evaluacion_comentario === 'Rápido y prolijo', 'el solicitante califica el trabajo con nota y comentario')
+const eo = (await as(U.ref, `select * from mant_v_evaluacion_operarios where operario_id=$1`, [U.op])).rows[0]
+check(eo && Number(eo.promedio) === 9 && Number(eo.calificaciones) >= 1, 'el promedio queda por operario')
 
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)

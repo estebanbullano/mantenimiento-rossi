@@ -3,16 +3,18 @@ import { fmtFecha, fmtMin, lunesDe, semanaISO, sumarDias, useDatos } from '@/lib
 import { Cargando, ErrorBox, Kpi, Pagina, Tarjeta } from '@/components/ui'
 
 interface Semana { semana: string; preventivas: number; preventivas_ok: number; correctivas: number; correctivas_ok: number; mttr_min: number | null }
+interface EvalOp { operario_id: string | null; operario: string | null; calificaciones: number; promedio: number; minima: number; maxima: number; ultima: string }
 interface Top { equipo_codigo: string; equipo_nombre: string; n: number; minutos: number }
 
 /** Tablero básico: cumplimiento del preventivo, correctivos, tiempo medio de reparación */
 export function Indicadores() {
   const desde = sumarDias(lunesDe(new Date()), -7 * 11)
   const { data, cargando, error } = useDatos(async () => {
-    const [s, c] = await Promise.all([
+    const [s, c, ev] = await Promise.all([
       supabase.from('mant_v_indicadores_semana').select('*').gte('semana', desde).order('semana'),
       supabase.from('mant_v_ordenes').select('equipo_codigo, equipo_nombre, tiempo_real_min').eq('tipo', 'correctiva').eq('estado', 'completada')
-        .gte('completada_en', new Date(Date.now() - 90 * 86400000).toISOString()).not('equipo_codigo', 'is', null)
+        .gte('completada_en', new Date(Date.now() - 90 * 86400000).toISOString()).not('equipo_codigo', 'is', null),
+      supabase.from('mant_v_evaluacion_operarios').select('*').order('promedio', { ascending: false })
     ])
     const m = new Map<string, Top>()
     for (const o of (c.data ?? []) as { equipo_codigo: string; equipo_nombre: string; tiempo_real_min: number | null }[]) {
@@ -23,7 +25,7 @@ export function Indicadores() {
     const porSemana = new Map(((s.data ?? []) as Semana[]).map((x) => [x.semana.slice(0, 10), x]))
     const semanas = Array.from({ length: 12 }, (_, i) => sumarDias(desde, i * 7)).map((d) =>
       porSemana.get(d) ?? { semana: d, preventivas: 0, preventivas_ok: 0, correctivas: 0, correctivas_ok: 0, mttr_min: null })
-    return { data: { semanas, top: [...m.values()].sort((a, b) => b.n - a.n).slice(0, 10) }, error: s.error || c.error }
+    return { data: { semanas, top: [...m.values()].sort((a, b) => b.n - a.n).slice(0, 10), evals: (ev.data ?? []) as EvalOp[] }, error: s.error || c.error }
   })
 
   if (cargando) return <Cargando />
@@ -69,6 +71,23 @@ export function Indicadores() {
               </div>
             ))}
           </div>
+        </Tarjeta>
+        <Tarjeta titulo="Calificación de los solicitantes por operario (1 a 10)" className="lg:col-span-2">
+          {!data?.evals.length ? <p className="text-sm text-suave">Todavía no hay calificaciones. Las cargan los solicitantes en "Mis pedidos" cuando el trabajo está completado.</p> : (
+            <table className="tabla -m-4 w-[calc(100%+2rem)]">
+              <thead><tr><th>Operario</th><th>Promedio</th><th>Calificaciones</th><th>Mínima</th><th>Máxima</th><th>Última</th></tr></thead>
+              <tbody>
+                {data.evals.map((e) => (
+                  <tr key={e.operario_id ?? 'sin'}>
+                    <td className="font-bold">{e.operario ?? 'Sin asignar'}</td>
+                    <td><span className={`font-bold ${Number(e.promedio) >= 8 ? 'text-aprobado' : Number(e.promedio) >= 6 ? 'text-pendiente' : 'text-primario'}`}>{Number(e.promedio).toFixed(1)}</span>
+                      <span className="ml-2 inline-block h-2 w-24 overflow-hidden rounded-full bg-fondo-2 align-middle"><span className="block h-full rounded-full bg-aprobado" style={{ width: `${Number(e.promedio) * 10}%` }} /></span></td>
+                    <td>{e.calificaciones}</td><td>{e.minima}</td><td>{e.maxima}</td><td>{fmtFecha(e.ultima?.slice(0, 10))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </Tarjeta>
         <Tarjeta titulo="Equipos con más correctivos (90 días)" className="lg:col-span-2">
           {!data?.top.length ? <p className="text-sm text-suave">Sin correctivos cerrados en los últimos 90 días.</p> : (

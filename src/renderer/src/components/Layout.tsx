@@ -16,6 +16,7 @@ const ITEMS: Item[] = [
   { a: '/pedidos', txt: 'Pedidos de reparación', roles: ['referente', 'supervisor', 'director'], contador: 'pedidos' },
   { a: '/panol', txt: 'Pañol', roles: ['panolero', 'referente', 'supervisor', 'compras', 'director'], contador: 'panol' },
   { a: '/compras', txt: 'Compras', roles: ['referente', 'supervisor', 'panolero', 'compras', 'director'], contador: 'compras' },
+  { a: '/indicadores', txt: 'Indicadores', roles: ['referente', 'supervisor', 'director'] },
   { a: '/configuracion', txt: 'Configuración', roles: ['referente'] },
   { a: '/usuarios', txt: 'Usuarios', roles: ['admin'] }
 ]
