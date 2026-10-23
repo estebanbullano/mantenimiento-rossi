@@ -3,7 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { mensajeError, supabase } from '@/lib/supabase'
 import { useSesion } from '@/lib/sesion'
 import { TURNOS, useOperarios, usePlantas } from '@/lib/catalogos'
-import { fmtFecha, fmtFechaHora, fmtFrecuencia, fmtMin, fmtNum, hoy, useDatos } from '@/lib/util'
+import { aNumero, fmtFecha, fmtFechaHora, fmtFrecuencia, fmtMin, fmtNum, hoy, useDatos } from '@/lib/util'
+import { eliminarTarea } from '@/lib/tareas'
 import { UNIDADES, type Articulo, type Equipo, type Orden, type Tarea, type TareaItem, type Unidad } from '@/lib/tipos'
 import { Boton, Campo, Cargando, ErrorBox, InsCriticidad, Modal, Pagina, Tarjeta, useAviso } from '@/components/ui'
 import { SelectorArticulo } from '@/components/selectores'
@@ -137,6 +138,7 @@ export function EquipoDetalle() {
                       <div className="flex gap-1">
                         <Boton variante="secundario" onClick={() => setAjuste(t)}>Ajustar frecuencia</Boton>
                         <Boton variante="fantasma" onClick={() => setTarea(t)}>Editar</Boton>
+                        <Boton variante="peligro" onClick={() => void eliminarTarea(t, avisar).then((ok) => ok && void recargar())}>Eliminar</Boton>
                       </div>
                     )}
                   </div>
@@ -181,17 +183,20 @@ function FormTarea({ tarea, repuestos, items, onCerrar, onListo }: { tarea: Part
   const { data: operarios } = useOperarios()
   const avisar = useAviso()
   const [f, setF] = useState<Partial<Tarea>>(tarea)
+  const [durTxt, setDurTxt] = useState(tarea.duracion_estimada_horas != null ? String(tarea.duracion_estimada_horas).replace('.', ',') : '')
   const [puntos, setPuntos] = useState<string>(items.map((i) => i.descripcion + (i.detalle ? ` — ${i.detalle}` : '')).join('\n'))
-  const [reps, setReps] = useState(repuestos.map((r) => ({ articulo_id: r.articulo_id, codigo: r.articulo.codigo, descripcion: r.articulo.descripcion, cantidad: r.cantidad })))
+  const [reps, setReps] = useState(repuestos.map((r) => ({ articulo_id: r.articulo_id, codigo: r.articulo.codigo, descripcion: r.articulo.descripcion, cantidad: String(r.cantidad).replace('.', ',') })))
   const [error, setError] = useState<string | null>(null)
   const [guardando, setGuardando] = useState(false)
   const set = (k: keyof Tarea, v: unknown) => setF((x) => ({ ...x, [k]: v }))
 
   async function guardar() {
     if (!f.descripcion?.trim() || !f.frecuencia_valor) { setError('Completá la tarea y la frecuencia.'); return }
+    const dur = aNumero(durTxt)
+    if (durTxt.trim() && (dur === null || dur < 0)) { setError('La duración tiene que ser un número de horas, por ejemplo 1,5.'); return }
     setGuardando(true)
     const fila = {
-      equipo_id: f.equipo_id, descripcion: f.descripcion.trim(), duracion_estimada_horas: f.duracion_estimada_horas ?? null,
+      equipo_id: f.equipo_id, descripcion: f.descripcion.trim(), duracion_estimada_horas: dur,
       responsable_id: f.responsable_id || null, turno: f.turno || null, requiere_parada: !!f.requiere_parada,
       proxima_fecha: f.proxima_fecha || hoy(), activa: f.activa ?? true, notas: f.notas || null,
       ...(f.id ? {} : { frecuencia_valor: f.frecuencia_valor, frecuencia_unidad: f.frecuencia_unidad })
@@ -211,7 +216,7 @@ function FormTarea({ tarea, repuestos, items, onCerrar, onListo }: { tarea: Part
     }
     await supabase.from('mant_tarea_repuestos').delete().eq('tarea_id', tid)
     if (reps.length) {
-      const { error } = await supabase.from('mant_tarea_repuestos').insert(reps.map((x) => ({ tarea_id: tid, articulo_id: x.articulo_id, cantidad: x.cantidad })))
+      const { error } = await supabase.from('mant_tarea_repuestos').insert(reps.map((x) => ({ tarea_id: tid, articulo_id: x.articulo_id, cantidad: aNumero(x.cantidad) || 1 })))
       if (error) avisar(mensajeError(error), 'error')
     }
     setGuardando(false)
@@ -220,7 +225,7 @@ function FormTarea({ tarea, repuestos, items, onCerrar, onListo }: { tarea: Part
 
   return (
     <Modal abierto titulo={f.id ? 'Editar tarea preventiva' : 'Nueva tarea preventiva'} onCerrar={onCerrar} ancho="max-w-2xl"
-      pie={<><Boton variante="fantasma" onClick={onCerrar}>Cancelar</Boton><Boton cargando={guardando} onClick={() => void guardar()}>Guardar</Boton></>}>
+      pie={<>{f.id && <Boton variante="peligro" className="mr-auto" onClick={() => void eliminarTarea({ id: f.id!, descripcion: f.descripcion ?? '' }, avisar).then((ok) => ok && onListo())}>Eliminar tarea</Boton>}<Boton variante="fantasma" onClick={onCerrar}>Cancelar</Boton><Boton cargando={guardando} onClick={() => void guardar()}>Guardar</Boton></>}>
       <ErrorBox texto={error} />
       <div className="grid gap-3 sm:grid-cols-2">
         <Campo etiqueta="Tarea" className="sm:col-span-2"><input className="campo" value={f.descripcion ?? ''} onChange={(e) => set('descripcion', e.target.value)} placeholder="Cambio de goma de válvula mariposa" /></Campo>
@@ -233,7 +238,7 @@ function FormTarea({ tarea, repuestos, items, onCerrar, onListo }: { tarea: Part
           </div>
         </Campo>
         <Campo etiqueta="Próxima fecha"><input type="date" className="campo" value={f.proxima_fecha ?? ''} onChange={(e) => set('proxima_fecha', e.target.value)} /></Campo>
-        <Campo etiqueta="Duración estimada (h)"><input className="campo" inputMode="decimal" value={f.duracion_estimada_horas ?? ''} onChange={(e) => set('duracion_estimada_horas', e.target.value ? Number(e.target.value.replace(',', '.')) : null)} /></Campo>
+        <Campo etiqueta="Duración estimada (h)" ayuda="Se pueden poner fracciones: 0,5 = media hora · 1,25 = 1 h 15 min"><input className="campo" inputMode="decimal" value={durTxt} onChange={(e) => setDurTxt(e.target.value.replace(/[^0-9.,]/g, ''))} placeholder="Ej.: 1,5" /></Campo>
         <Campo etiqueta="Responsable habitual">
           <select className="campo" value={f.responsable_id ?? ''} onChange={(e) => set('responsable_id', e.target.value || null)}>
             <option value="">—</option>{(operarios ?? []).map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
@@ -255,12 +260,12 @@ function FormTarea({ tarea, repuestos, items, onCerrar, onListo }: { tarea: Part
         <span className="etiqueta">Repuestos que usa (para anticipar compras)</span>
         {reps.map((r, i) => (
           <div key={r.articulo_id} className="mb-1 flex items-center gap-2 text-sm">
-            <input className="campo w-20 py-1" inputMode="decimal" value={r.cantidad} onChange={(e) => setReps(reps.map((x, j) => j === i ? { ...x, cantidad: Number(e.target.value.replace(',', '.')) || 1 } : x))} />
+            <input className="campo w-20 py-1" inputMode="decimal" value={r.cantidad} onChange={(e) => setReps(reps.map((x, j) => j === i ? { ...x, cantidad: e.target.value.replace(/[^0-9.,]/g, '') } : x))} />
             <span className="flex-1"><b>{r.codigo}</b> · {r.descripcion}</span>
             <button className="font-bold text-rechazado" onClick={() => setReps(reps.filter((_, j) => j !== i))}>×</button>
           </div>
         ))}
-        <SelectorArticulo onElegir={(a) => !reps.some((r) => r.articulo_id === a.id) && setReps([...reps, { articulo_id: a.id, codigo: a.codigo, descripcion: a.descripcion, cantidad: 1 }])} />
+        <SelectorArticulo onElegir={(a) => !reps.some((r) => r.articulo_id === a.id) && setReps([...reps, { articulo_id: a.id, codigo: a.codigo, descripcion: a.descripcion, cantidad: '1' }])} />
       </div>
     </Modal>
   )

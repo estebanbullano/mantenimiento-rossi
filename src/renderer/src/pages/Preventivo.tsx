@@ -4,6 +4,7 @@ import { mensajeError, supabase } from '@/lib/supabase'
 import { useSesion } from '@/lib/sesion'
 import { usePlantas } from '@/lib/catalogos'
 import { fmtFecha, fmtFrecuencia, fmtNum, lunesDe, numOT, semanaISO, sumarDias, sumarFrecuencia, useDatos } from '@/lib/util'
+import { eliminarTarea } from '@/lib/tareas'
 import { UNIDADES, type Clasificacion, type Orden, type Tarea, type Unidad } from '@/lib/tipos'
 import { Boton, Cargando, ErrorBox, H2, Insignia, InsCriticidad, InsEstadoOT, Modal, Pagina, Pestanas, Tarjeta, Vacio, useAviso } from '@/components/ui'
 
@@ -251,7 +252,7 @@ export function EditarTarea({ t, fechaSugerida, onCerrar, onListo, onFicha }: { 
 
   return (
     <Modal abierto titulo={t.descripcion} onCerrar={onCerrar}
-      pie={<>{onFicha && <Boton variante="fantasma" className="mr-auto" onClick={onFicha}>Ver ficha del equipo</Boton>}<Boton variante="secundario" onClick={onCerrar}>Cancelar</Boton><Boton cargando={guardando} onClick={() => void guardar()}>Guardar</Boton></>}>
+      pie={<><Boton variante="peligro" className="mr-auto" onClick={() => void eliminarTarea(t, avisar).then((ok) => ok && onListo())}>Eliminar tarea</Boton>{onFicha && <Boton variante="fantasma" onClick={onFicha}>Ver ficha</Boton>}<Boton variante="secundario" onClick={onCerrar}>Cancelar</Boton><Boton cargando={guardando} onClick={() => void guardar()}>Guardar</Boton></>}>
       <div className="flex flex-col gap-3.5 text-sm">
         {t.equipo && <span className="text-[13px] text-suave">{t.equipo.codigo} · {t.equipo.nombre}</span>}
         <div className="grid grid-cols-[110px_minmax(0,1fr)] items-end gap-2.5">
@@ -413,7 +414,10 @@ function PorEquipo() {
                   <label className="flex flex-[1_1_180px] flex-col gap-1.5 text-xs text-suave">Motivo
                     <input className="campo min-h-[42px] rounded-xl" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ej.: en la inspección estaba en buen estado" /></label>
                 </div>
-                <Boton className="self-start" cargando={guardando} onClick={() => void aplicar()}>Aplicar nueva frecuencia</Boton>
+                <div className="flex flex-wrap gap-2">
+                  <Boton cargando={guardando} onClick={() => void aplicar()}>Aplicar nueva frecuencia</Boton>
+                  <Boton variante="peligro" onClick={() => void eliminarTarea(plan, avisar).then((ok) => { if (ok) { setSel(null); void recargar() } })}>Eliminar tarea</Boton>
+                </div>
                 <span className="text-xs text-tenue">Queda registrado en el historial y el calendario se reprograma solo.</span>
               </div>
             )}

@@ -420,5 +420,18 @@ check(ev.evaluacion === 9 && ev.evaluacion_comentario === 'Rápido y prolijo', '
 const eo = (await as(U.ref, `select * from mant_v_evaluacion_operarios where operario_id=$1`, [U.op])).rows[0]
 check(eo && Number(eo.promedio) === 9 && Number(eo.calificaciones) >= 1, 'el promedio queda por operario')
 
+console.log('Eliminar tarea del plan (0012)')
+const te = (await as(U.ref, `insert into mant_tareas (equipo_id, descripcion, frecuencia_valor, frecuencia_unidad, proxima_fecha, duracion_estimada_horas) values ($1,'Tarea a borrar',1,'meses',current_date, 1.5) returning id, duracion_estimada_horas d`, [eq])).rows[0]
+check(Number(te.d) === 1.5, 'la duración acepta fracción de horas (1,5 h)')
+await as(U.ref, `insert into mant_tarea_items (tarea_id, orden, descripcion) values ($1,1,'Punto')`, [te.id])
+const ohecha = (await as(U.ref, `insert into mant_ordenes (tipo,titulo,equipo_id,tarea_id,estado) values ('preventiva','Hecha',$1,$2,'pendiente') returning id`, [eq, te.id])).rows[0].id
+await as(null, `update mant_ordenes set estado='no_realizada', completada_en=now() where id=$1`, [ohecha])
+await as(U.ref, `select mant_generar_ots(array[$1::uuid], $2::uuid, current_date)`, [te.id, U.op])
+check(!!(await fails(U.op, `select mant_eliminar_tarea($1)`, [te.id])), 'un operario no elimina tareas')
+const el = (await as(U.ref, `select mant_eliminar_tarea($1, 'Ya no se usa') r`, [te.id])).rows[0].r
+check(el.ots_canceladas === 1 && el.ots_en_historial === 1, 'al eliminar se cancela la OT pendiente y la hecha queda en el historial')
+check(!(await as(U.ref, `select 1 from mant_tareas where id=$1`, [te.id])).rows.length && !(await as(U.ref, `select 1 from mant_tarea_items where tarea_id=$1`, [te.id])).rows.length, 'la tarea y su checklist se borran')
+check((await as(U.ref, `select count(*)::int n from mant_ordenes where id=$1`, [ohecha])).rows[0].n === 1, 'la OT del historial sigue en la máquina')
+
 console.log(`\n${ok} ok, ${fail} con error`)
 process.exit(fail ? 1 : 0)

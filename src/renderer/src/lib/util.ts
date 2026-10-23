@@ -165,3 +165,12 @@ export const fmtReloj = (seg: number) => {
   const s = Math.max(0, Math.floor(seg))
   return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
+
+/** Convierte "1,5" o "1.5" a número (null si está vacío o no es número) */
+export function aNumero(t: string | number | null | undefined): number | null {
+  if (t === null || t === undefined) return null
+  const s = String(t).trim().replace(',', '.')
+  if (!s) return null
+  const n = Number(s)
+  return Number.isFinite(n) ? n : null
+}
