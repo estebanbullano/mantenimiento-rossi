@@ -7,6 +7,7 @@ import { fmtFecha, numPedido, subirArchivo, useDatos } from '@/lib/util'
 import type { ComentarioPedido, Equipo, Pedido, Urgencia } from '@/lib/tipos'
 import { Boton, Campo, Cargando, ErrorBox, ESTADO_EQUIPO, InsEstadoPedido, OkBox, Segmento, Vacio } from '@/components/ui'
 import { OpcionPunto, PantallaCelular } from '@/components/Celular'
+import { Foto } from '@/components/selectores'
 import { CargarAdjuntos, subirAdjuntos, type AdjuntoNuevo } from '@/components/AdjuntosPedido'
 import { esRolCelular } from '@/components/Layout'
 
@@ -17,21 +18,94 @@ const guardarMail = (m: string) => { try { localStorage.setItem(CLAVE_MAIL, m) }
 const esMailInterno = (m?: string | null) => !m || m.endsWith('@planta.famigliarossi.local')
 const fmtCorta = (iso: string) => new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
 
-/** Área = planta · sector, armada con el maestro de equipos */
+/** Área = la planta (fábrica), armada con el maestro de equipos */
 function useAreas(equipos: Equipo[] | null) {
   return useMemo(() => {
     const m = new Map<string, { clave: string; txt: string; equipos: Equipo[] }>()
     for (const e of equipos ?? []) {
-      const clave = `${e.planta_id}|${e.sector_id ?? ''}`
-      const txt = [e.planta_nombre, e.sector_nombre].filter(Boolean).join(' · ')
-      if (!m.has(clave)) m.set(clave, { clave, txt, equipos: [] })
-      m.get(clave)!.equipos.push(e)
+      if (!m.has(e.planta_id)) m.set(e.planta_id, { clave: e.planta_id, txt: e.planta_nombre ?? 'Planta', equipos: [] })
+      m.get(e.planta_id)!.equipos.push(e)
     }
     return [...m.values()].sort((a, b) => a.txt.localeCompare(b.txt))
   }, [equipos])
 }
 
-/** Celular del solicitante: "Nuevo pedido" y "Mis pedidos" */
+const sinAcentos = (t: string) => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+
+/** Fotos principales de las máquinas (equipo → ruta) */
+function useFotosEquipos() {
+  return useDatos(async () => {
+    const m = new Map<string, string>()
+    for (let i = 0; i < 10; i++) {
+      const { data, error } = await supabase.from('mant_v_equipo_foto').select('equipo_id,ruta').range(i * 1000, i * 1000 + 999)
+      if (error) return { data: m, error: null }
+      for (const f of (data ?? []) as { equipo_id: string; ruta: string }[]) m.set(f.equipo_id, f.ruta)
+      if (!data || data.length < 1000) break
+    }
+    return { data: m, error: null }
+  })
+}
+
+const Miniatura = ({ ruta }: { ruta?: string }) => ruta
+  ? <Foto ruta={ruta} sinEnlace className="h-12 w-12 shrink-0" />
+  : <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] bg-fondo text-lg text-tenue">⚙</span>
+
+/** Buscador de máquinas: escribís y te va sugiriendo, con nombre y foto */
+function BuscarMaquina({ equipos, plantaId, valor, fotos, onElegir }:
+  { equipos: Equipo[]; plantaId: string; valor: string; fotos: Map<string, string>; onElegir: (id: string) => void }) {
+  const [q, setQ] = useState('')
+  const elegido = equipos.find((e) => e.id === valor)
+  const lista = useMemo(() => {
+    const base = equipos.filter((e) => !plantaId || e.planta_id === plantaId)
+    const palabras = sinAcentos(q).split(/\s+/).filter(Boolean)
+    if (!palabras.length) return base
+    return base
+      .map((e) => {
+        const nombre = sinAcentos(e.nombre), todo = `${nombre} ${sinAcentos(e.codigo)} ${sinAcentos(e.sector_nombre ?? '')} ${sinAcentos(e.planta_nombre ?? '')}`
+        if (!palabras.every((p) => todo.includes(p))) return null
+        // primero las que empiezan con lo escrito
+        const pts = (nombre.startsWith(palabras[0]) ? 0 : 1) + (palabras.every((p) => nombre.includes(p)) ? 0 : 1)
+        return { e, pts }
+      })
+      .filter((x): x is { e: Equipo; pts: number } => !!x)
+      .sort((a, b) => a.pts - b.pts || a.e.nombre.localeCompare(b.e.nombre, 'es', { numeric: true }))
+      .map((x) => x.e)
+  }, [equipos, plantaId, q])
+
+  if (valor && (elegido || valor === OTRO)) {
+    return (
+      <div className="flex items-center gap-3 rounded-[16px] border-2 border-primario bg-rojo-suave/40 p-2.5">
+        {elegido ? <Miniatura ruta={fotos.get(elegido.id)} /> : <span className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-white text-lg">?</span>}
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="text-[15px] font-semibold leading-tight">{elegido ? elegido.nombre : 'Otro / no sé cuál es'}</span>
+          {elegido && <span className="truncate text-xs text-tenue">{[elegido.planta_nombre, elegido.sector_nombre].filter(Boolean).join(' · ')}</span>}
+        </span>
+        <button type="button" className="rounded-full bg-white px-3 py-2 text-[13px] font-semibold text-primario-oscuro" onClick={() => { onElegir(''); setQ('') }}>Cambiar</button>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <input className="campo" type="search" value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off"
+        placeholder={plantaId ? 'Escribí: noria, rosca, silo 3…' : 'Escribí el nombre de la máquina…'} />
+      <div className="flex max-h-[340px] flex-col gap-1.5 overflow-y-auto rounded-[16px] border border-borde p-1.5">
+        {lista.slice(0, 60).map((e) => (
+          <button key={e.id} type="button" onClick={() => onElegir(e.id)} className="flex items-center gap-3 rounded-[12px] p-1.5 text-left hover:bg-crema active:bg-rojo-suave">
+            <Miniatura ruta={fotos.get(e.id)} />
+            <span className="flex min-w-0 flex-col">
+              <span className="text-[15px] font-medium leading-tight">{e.nombre}</span>
+              <span className="truncate text-xs text-tenue">{plantaId ? e.sector_nombre ?? '' : [e.planta_nombre, e.sector_nombre].filter(Boolean).join(' · ')}</span>
+            </span>
+          </button>
+        ))}
+        {lista.length > 60 && <span className="px-2 py-1.5 text-xs text-tenue">Hay {lista.length - 60} más: escribí para achicar la lista.</span>}
+        {lista.length === 0 && <span className="px-2 py-3 text-sm text-suave">No encontramos esa máquina{q ? ` con "${q}"` : ''}.</span>}
+        <button type="button" onClick={() => onElegir(OTRO)} className="rounded-[12px] border border-dashed border-borde-campo p-2.5 text-left text-sm font-medium text-texto-2">Otro / no sé cuál es</button>
+      </div>
+    </div>
+  )
+}
+
 export function PedidosCelular({ inicial = 'nuevo' }: { inicial?: 'nuevo' | 'mis' }) {
   const [params] = useSearchParams()
   const [tab, setTab] = useState<'nuevo' | 'mis'>(params.get('equipo') ? 'nuevo' : inicial)
@@ -78,14 +152,14 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
   useEffect(() => {
     if (!equipoInicial || !equipos) return
     const e = equipos.find((x) => x.codigo.toUpperCase() === equipoInicial.toUpperCase() || x.id === equipoInicial)
-    if (e) { setArea(`${e.planta_id}|${e.sector_id ?? ''}`); setEquipoId(e.id) }
+    if (e) { setArea(e.planta_id); setEquipoId(e.id) }
   }, [equipoInicial, equipos])
 
   const areaSel = areas.find((a) => a.clave === area)
-  const delArea = areaSel?.equipos ?? []
+  const { data: fotos } = useFotosEquipos()
 
   async function enviar() {
-    if (!area) return setError('Elegí el área.')
+    if (!area && equipoId !== OTRO && !equipoId) return setError('Elegí la planta o buscá la máquina.')
     if (!equipoId) return setError('Elegí el equipo (o "Otro / no sé cuál").')
     if (equipoId === OTRO && !ubicacion.trim()) return setError('Contá dónde está el problema.')
     if (!desc.trim()) return setError('Contá qué pasó.')
@@ -98,7 +172,7 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
         titulo: desc.trim().split('\n')[0].slice(0, 80),
         equipo_id: eq ? eq.id : null,
         ubicacion: eq ? null : ubicacion.trim(),
-        area: areaSel?.txt ?? null,
+        area: eq ? [eq.planta_nombre, eq.sector_nombre].filter(Boolean).join(' · ') : areaSel?.txt ?? null,
         descripcion: desc.trim(),
         urgencia_reportada: estado,
         equipo_detenido: estado === 'alta',
@@ -126,19 +200,17 @@ function NuevoPedidoForm({ equipoInicial, onEnviado }: { equipoInicial: string |
       <Campo etiqueta="Tu mail" suave ayuda={mail ? 'Te avisamos ahí los avances del pedido. Lo recordamos para la próxima.' : 'Te vamos a mandar ahí los avisos y avances del pedido.'}>
         <input className="campo" type="email" placeholder="nombre@famigliarossi.com.ar" value={mail} onChange={(e) => setMail(e.target.value)} />
       </Campo>
-      <Campo etiqueta="Área" suave>
+      <Campo etiqueta="Planta" suave>
         <select className="campo" value={area} onChange={(e) => { setArea(e.target.value); setEquipoId('') }}>
-          <option value="">Elegí el área…</option>
+          <option value="">Todas las plantas</option>
           {areas.map((a) => <option key={a.clave} value={a.clave}>{a.txt}</option>)}
         </select>
       </Campo>
-      <Campo etiqueta="Equipo" suave>
-        <select className="campo" value={equipoId} disabled={!area} onChange={(e) => setEquipoId(e.target.value)}>
-          <option value="">{area ? 'Elegí el equipo…' : 'Primero elegí el área'}</option>
-          {delArea.map((e) => <option key={e.id} value={e.id}>{e.nombre} ({e.codigo})</option>)}
-          {area && <option value={OTRO}>Otro / no sé cuál es</option>}
-        </select>
-      </Campo>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[13px] font-medium text-suave">Máquina</span>
+        <BuscarMaquina equipos={equipos ?? []} plantaId={area} valor={equipoId} fotos={fotos ?? new Map()}
+          onElegir={(id) => { setEquipoId(id); const e = equipos?.find((x) => x.id === id); if (e) setArea(e.planta_id) }} />
+      </div>
       {equipoId === OTRO && (
         <Campo etiqueta="¿Dónde está?" suave><input className="campo" placeholder="Ej.: canilla del vestuario, planta baja" value={ubicacion} onChange={(e) => setUbicacion(e.target.value)} /></Campo>
       )}
